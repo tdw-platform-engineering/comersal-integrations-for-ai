@@ -115,7 +115,7 @@ def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
             "cod_ven": str(enc.get("CODVEN", "")),
             "val_tot": str(enc.get("VALTOT", 0)),
             "status": int(enc.get("STATUS", 0) or 0),
-            "fecha": f"{enc.get('ANOSIS', 0)}-{enc.get('MESSIS', 0):02d}-{enc.get('DIASIS', 0):02d}",
+            "fecha": f"{enc.get('ANOSIS', 0)}-{int(enc.get('MESSIS', 0) or 0):02d}-{int(enc.get('DIASIS', 0) or 0):02d}",
             "num_lineas": len(detalles),
             "lineas": [
                 {
