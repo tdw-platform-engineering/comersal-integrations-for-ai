@@ -1,5 +1,5 @@
 # Multi-stage build: uv for deps, Lambda base for runtime
-FROM python:3.13-slim AS builder
+FROM public.ecr.aws/docker/library/python:3.13-slim AS builder
 
 RUN pip install uv
 
