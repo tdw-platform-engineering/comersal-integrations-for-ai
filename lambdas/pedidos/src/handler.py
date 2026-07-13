@@ -21,7 +21,7 @@ logger.setLevel(logging.INFO)
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
-    """Create an order. Returns result directly (synchronous invocation)."""
+    """Create or query an order. Returns result directly (synchronous invocation)."""
     request_id = getattr(context, "aws_request_id", "local") if context else "local"
 
     # Support both direct payload and API Gateway-style (body as string)
@@ -29,6 +29,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if "body" in event and isinstance(event["body"], str):
         body = json.loads(event["body"])
 
+    # Route by action (default: crear)
+    action = body.get("action", "crear")
+
+    if action == "obtener":
+        return _obtener_pedido(body)
+
+    # --- crear flow ---
     encabezado = body.get("encabezado", {})
     lineas = body.get("lineas", [])
 
@@ -77,3 +84,47 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
 def _error_response(errores: list[str], status: int = 400) -> dict[str, Any]:
     return {"ok": False, "errores": errores, "status": status}
+
+
+def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
+    """Read an order back from the DB by numtra."""
+    from db import get_cursor
+    from models import TABLE_PEDIDO_ENC, TABLE_PEDIDO_DET
+
+    numtra = str(body.get("numtra", "")).strip()
+    if not numtra:
+        return _error_response(["numtra es requerido"])
+
+    with get_cursor() as (cursor, _conn):
+        cursor.execute(f"SELECT * FROM {TABLE_PEDIDO_ENC} WHERE NUMTRA = %s", (numtra,))
+        enc = cursor.fetchone()
+        if not enc:
+            return _error_response([f"Pedido '{numtra}' no encontrado"])
+
+        cursor.execute(
+            f"SELECT * FROM {TABLE_PEDIDO_DET} WHERE NUMTRA = %s ORDER BY CODLIN",
+            (numtra,),
+        )
+        detalles = cursor.fetchall()
+
+    return {
+        "ok": True,
+        "data": {
+            "numtra": str(enc.get("NUMTRA", "")),
+            "cod_cte": str(enc.get("CODCTE", "")),
+            "cod_ven": str(enc.get("CODVEN", "")),
+            "val_tot": str(enc.get("VALTOT", 0)),
+            "status": int(enc.get("STATUS", 0) or 0),
+            "fecha": f"{enc.get('ANOSIS', 0)}-{enc.get('MESSIS', 0):02d}-{enc.get('DIASIS', 0):02d}",
+            "num_lineas": len(detalles),
+            "lineas": [
+                {
+                    "codlin": int(d.get("CODLIN", 0) or 0),
+                    "cod_pro": str(d.get("CODPRO", "")),
+                    "ped_caj": int(d.get("PEDCAJ", 0) or 0),
+                    "ped_und": int(d.get("PEDUND", 0) or 0),
+                }
+                for d in detalles
+            ],
+        },
+    }
