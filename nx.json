@@ -1,0 +1,26 @@
+{
+  "targetDefaults": {
+    "lint": {
+      "inputs": ["default"],
+      "cache": true
+    },
+    "test": {
+      "inputs": ["default"],
+      "cache": true
+    },
+    "build": {
+      "inputs": ["default"],
+      "cache": true
+    }
+  },
+  "plugins": [
+    {
+      "plugin": "@nxlv/python",
+      "options": {
+        "installProvider": "uv",
+        "lintProvider": "ruff",
+        "testProvider": "pytest"
+      }
+    }
+  ]
+}

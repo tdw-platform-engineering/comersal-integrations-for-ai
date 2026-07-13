@@ -1,0 +1,49 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_ACCOUNT_ID: "676206930375"
+    AWS_DEFAULT_REGION: "us-east-1"
+    ECR_REGISTRY: "676206930375.dkr.ecr.us-east-1.amazonaws.com"
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:-latest}
+
+  build:
+    commands:
+      # Pedidos Lambda
+      - echo "Building pedidos..."
+      - docker build -t comersal/integrations/pedidos:$IMAGE_TAG -f lambdas/pedidos/Dockerfile .
+      - docker tag comersal/integrations/pedidos:$IMAGE_TAG $ECR_REGISTRY/comersal/integrations/pedidos:$IMAGE_TAG
+      - docker tag comersal/integrations/pedidos:$IMAGE_TAG $ECR_REGISTRY/comersal/integrations/pedidos:latest
+
+      # Facturas Lambda
+      - echo "Building facturas..."
+      - docker build -t comersal/integrations/facturas:$IMAGE_TAG -f lambdas/facturas/Dockerfile .
+      - docker tag comersal/integrations/facturas:$IMAGE_TAG $ECR_REGISTRY/comersal/integrations/facturas:$IMAGE_TAG
+      - docker tag comersal/integrations/facturas:$IMAGE_TAG $ECR_REGISTRY/comersal/integrations/facturas:latest
+
+  post_build:
+    commands:
+      - echo "Pushing images..."
+      - docker push $ECR_REGISTRY/comersal/integrations/pedidos:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/comersal/integrations/pedidos:latest
+      - docker push $ECR_REGISTRY/comersal/integrations/facturas:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/comersal/integrations/facturas:latest
+
+      # Update Lambda function code
+      - |
+        aws lambda update-function-code \
+          --function-name comersal-integrations-pedidos \
+          --image-uri $ECR_REGISTRY/comersal/integrations/pedidos:$IMAGE_TAG
+      - |
+        aws lambda update-function-code \
+          --function-name comersal-integrations-facturas \
+          --image-uri $ECR_REGISTRY/comersal/integrations/facturas:$IMAGE_TAG
+
+      - echo "Deploy complete"

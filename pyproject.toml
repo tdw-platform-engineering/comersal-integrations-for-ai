@@ -1,0 +1,18 @@
+[project]
+name = "comersal-integrations"
+version = "0.1.0"
+description = "Comersal integrations — Lambda functions for NAV SQL Server operations"
+requires-python = ">=3.13"
+
+[tool.uv.workspace]
+members = ["lambdas/*"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

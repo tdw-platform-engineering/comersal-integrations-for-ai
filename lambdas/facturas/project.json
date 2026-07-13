@@ -1,0 +1,18 @@
+{
+  "name": "facturas",
+  "root": "lambdas/facturas",
+  "targets": {
+    "lint": {
+      "command": "uv run ruff check src/ tests/",
+      "options": { "cwd": "lambdas/facturas" }
+    },
+    "test": {
+      "command": "uv run pytest tests/ -q",
+      "options": { "cwd": "lambdas/facturas" }
+    },
+    "build": {
+      "command": "docker build -t comersal/integrations/facturas:dev -f Dockerfile ../..",
+      "options": { "cwd": "lambdas/facturas" }
+    }
+  }
+}

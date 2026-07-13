@@ -1,0 +1,13 @@
+{
+  "name": "comersal-integrations",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [],
+  "scripts": {
+    "lint": "nx run-many -t lint",
+    "test": "nx run-many -t test"
+  },
+  "devDependencies": {
+    "nx": "^22.0.0"
+  }
+}
