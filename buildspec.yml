@@ -39,11 +39,11 @@ phases:
       # Update Lambda function code
       - |
         aws lambda update-function-code \
-          --function-name comersal-integrations-pedidos \
+          --function-name $PEDIDOS_FUNCTION_NAME \
           --image-uri $ECR_REGISTRY/comersal/integrations/pedidos:$IMAGE_TAG
       - |
         aws lambda update-function-code \
-          --function-name comersal-integrations-facturas \
+          --function-name $FACTURAS_FUNCTION_NAME \
           --image-uri $ECR_REGISTRY/comersal/integrations/facturas:$IMAGE_TAG
 
       - echo "Deploy complete"
