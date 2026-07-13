@@ -13,8 +13,8 @@ import json
 import logging
 from typing import Any
 
-from .numtra import get_next_numtra
-from .service import crear_pedido, ErrorValidacion
+from numtra import get_next_numtra
+from service import crear_pedido, ErrorValidacion
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
