@@ -55,6 +55,12 @@ def crear_pedido(datos_enc: dict[str, Any], lineas: list[dict[str, Any]]) -> dic
         obser1=str(datos_enc.get("obser1", "")),
         obser2=str(datos_enc.get("obser2", "")),
         comentario=str(datos_enc.get("comentario", "")),
+        cod_pag=str(datos_enc.get("cod_pag", "")),
+        cod_rut=str(datos_enc.get("cod_rut", "")),
+        celular=str(datos_enc.get("celular", "")),
+        departamento=str(datos_enc.get("departamento", "")),
+        municipio=str(datos_enc.get("municipio", "")),
+        reg_com=str(datos_enc.get("reg_com", "")),
     )
     enc.validar()
     enc.auto_llenar()
@@ -102,10 +108,11 @@ def _validar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> Non
     errores: list[str] = []
 
     with get_cursor() as (cursor, _conn):
-        # 1. Client exists
-        cursor.execute(f"SELECT TOP 1 CodCte FROM {VIEW_CLIENTES} WHERE CodCte = %s", (enc.cod_cte,))
-        if cursor.fetchone() is None:
-            errores.append(f"El cliente '{enc.cod_cte}' no existe en el sistema")
+        # 1. Client exists (skip for generic new-client code)
+        if enc.cod_cte != "99999999":
+            cursor.execute(f"SELECT TOP 1 CodCte FROM {VIEW_CLIENTES} WHERE CodCte = %s", (enc.cod_cte,))
+            if cursor.fetchone() is None:
+                errores.append(f"El cliente '{enc.cod_cte}' no existe en el sistema")
 
         # 2. Duplicate numtra
         cursor.execute(f"SELECT TOP 1 NUMTRA FROM {TABLE_PEDIDO_ENC} WHERE NUMTRA = %s", (enc.numtra,))
