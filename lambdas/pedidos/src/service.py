@@ -55,6 +55,11 @@ def crear_pedido(datos_enc: dict[str, Any], lineas: list[dict[str, Any]]) -> dic
         obser1=str(datos_enc.get("obser1", "")),
         obser2=str(datos_enc.get("obser2", "")),
         comentario=str(datos_enc.get("comentario", "")),
+        cod_pag=str(datos_enc.get("cod_pag", "")),
+        cod_rut=str(datos_enc.get("cod_rut", "")),
+        celular=str(datos_enc.get("celular", "")),
+        departamento=str(datos_enc.get("departamento", "")),
+        municipio=str(datos_enc.get("municipio", "")),
     )
     enc.validar()
     enc.auto_llenar()

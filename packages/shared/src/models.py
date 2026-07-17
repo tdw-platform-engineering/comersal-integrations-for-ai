@@ -25,9 +25,14 @@ class PedidoEncabezado:
     val_gra: Decimal = field(default_factory=lambda: Decimal("0"))
     val_iva: Decimal = field(default_factory=lambda: Decimal("0"))
     val_tot: Decimal = field(default_factory=lambda: Decimal("0"))
-    obser1: str = ""
+    obser1: str = ""  # Nombre Cliente
     obser2: str = ""
-    comentario: str = ""
+    comentario: str = ""  # Dirección
+    cod_pag: str = ""  # Tipo Documento (FACT)
+    cod_rut: str = ""  # Número de DUI
+    celular: str = ""  # Número Celular del que escribe el cliente
+    departamento: str = ""  # Departamento
+    municipio: str = ""  # Municipio
     status: int = 0
     ano_sis: int = 0
     mes_sis: int = 0
@@ -61,12 +66,13 @@ class PedidoEncabezado:
             "ANOENTG": self.ano_entg, "ANOSIS": self.ano_sis,
             "CANCOP": 0, "CODCTE": self.cod_cte, "CODDEP": 0,
             "CODFAC": 1, "CODFAM": 3, "CODIDE": self.cod_ven,
-            "CONLIN": 0, "CODLUG": 0, "CODMUN": 0, "CODPAG": 0,
-            "CODRUT": 0, "CODTPO": 0, "CODVEN": self.cod_ven,
+            "CONLIN": self.departamento, "CODLUG": self.municipio,
+            "CODMUN": 0, "CODPAG": self.cod_pag,
+            "CODRUT": self.cod_rut, "CODTPO": 0, "CODVEN": self.cod_ven,
             "CODZON": 0, "DIAETG": self.dia_entg, "DIASIS": self.dia_sis,
             "FLGACT": 0, "FLGGPF": 5, "HORSIS": self.hor_sis,
             "MESETG": self.mes_entg, "MESSIS": self.mes_sis,
-            "NOMUSR": self.cod_ven, "NUMGPO": 0, "NUMPED": self.numtra,
+            "NOMUSR": self.celular, "NUMGPO": 0, "NUMPED": self.numtra,
             "PORCOM": 0, "REGCOM": 0, "TASIVA": 0, "VALEXE": 0,
             "VALGRA": self.val_gra, "VALIVA": self.val_iva,
             "VALTOT": self.val_tot, "STATUS": 0, "FLGMOR": 0,
