@@ -33,6 +33,7 @@ class PedidoEncabezado:
     celular: str = ""  # Número Celular del que escribe el cliente
     departamento: str = ""  # Departamento
     municipio: str = ""  # Municipio
+    reg_com: str = ""  # Código Actividad Económica (crédito fiscal)
     status: int = 0
     ano_sis: int = 0
     mes_sis: int = 0
@@ -73,7 +74,7 @@ class PedidoEncabezado:
             "FLGACT": 0, "FLGGPF": 5, "HORSIS": self.hor_sis,
             "MESETG": self.mes_entg, "MESSIS": self.mes_sis,
             "NOMUSR": self.celular, "NUMGPO": 0, "NUMPED": self.numtra,
-            "PORCOM": 0, "REGCOM": 0, "TASIVA": 0, "VALEXE": 0,
+            "PORCOM": 0, "REGCOM": self.reg_com, "TASIVA": 0, "VALEXE": 0,
             "VALGRA": self.val_gra, "VALIVA": self.val_iva,
             "VALTOT": self.val_tot, "STATUS": 0, "FLGMOR": 0,
             "NUMDOC": str(self.numtra), "NUMDSP": f"WM{self.cod_ven}",
