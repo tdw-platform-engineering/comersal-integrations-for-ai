@@ -28,6 +28,12 @@ comersal-integrations/
 │   ├── src/handler.py        # Entry point
 │   ├── tests/
 │   └── Dockerfile
+├── lambdas/catalogos/        # Reference catalog lookups Lambda (VPC, SQL Server)
+│   ├── src/handler.py        # Entry point (action dispatcher)
+│   ├── src/catalogs.py       # SQL queries (actividad comercial from NAV)
+│   ├── src/config.py         # Env var config
+│   ├── tests/
+│   └── Dockerfile
 ├── buildspec.yml             # CodeBuild (build + push + deploy)
 ├── nx.json                   # Nx workspace config
 └── pyproject.toml            # uv workspace root
@@ -36,10 +42,11 @@ comersal-integrations/
 ## Key Decisions
 
 1. **Direct SQL Server** — no Athena, no Flask API intermediary. NUMTRA generated via `SELECT MAX`.
-2. **VPC-attached** — both Lambdas in 000-TwdManaged VPC subnets with NAT gateway.
+2. **VPC-attached** — pedidos and facturas Lambdas in 000-TwdManaged VPC subnets with NAT gateway. Catalogos is **not** VPC-attached (S3 only).
 3. **Synchronous invocation** — Anima's `confirmar_pedido` tool invokes pedidos Lambda directly (`RequestResponse`). User gets immediate confirmation.
 4. **Validations preserved** — stock check, client existence, factor empaque, duplicate detection all run against the DB before INSERT.
 5. **No Redis** — cold Lambda runs are infrequent enough that connection pooling isn't needed. Single connection per invocation.
+6. **Catalogos from SQL Server** — reference catalogs (actividad comercial from `[dbo].[COMERSAL$GLORY_ACTIVIDAD_ECONOMICA]`) served via direct SQL query. VPC-attached like pedidos/facturas. Cached in Lambda memory for warm reuse.
 
 ## Environment Variables
 
@@ -73,6 +80,25 @@ comersal-integrations/
 
 // Output
 {"ok": true, "data": [...], "total": 5, "pagina": 1}
+```
+
+### Catalogos
+
+```json
+// Input — lookup actividad económica (REGCOM code for CFIS)
+{"action": "actividad_comercial", "descripcion": "VENTA AL POR MENOR DE ARTÍCULOS DE FERRETERÍA"}
+
+// Output (found)
+{"ok": true, "data": {"codigo": "4711", "descripcion": "VENTA AL POR MENOR..."}}
+
+// Output (not found)
+{"ok": false, "errores": ["Actividad económica no encontrada: '...'"]}
+
+// Input — full catalog (~400 entries)
+{"action": "actividad_comercial_all"}
+
+// Output
+{"ok": true, "data": {"VENTA AL POR MENOR...": "4711", ...}, "total": 412}
 ```
 
 ## Deployment
