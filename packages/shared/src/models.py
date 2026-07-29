@@ -25,15 +25,18 @@ class PedidoEncabezado:
     val_gra: Decimal = field(default_factory=lambda: Decimal("0"))
     val_iva: Decimal = field(default_factory=lambda: Decimal("0"))
     val_tot: Decimal = field(default_factory=lambda: Decimal("0"))
-    obser1: str = ""  # Nombre Cliente
-    obser2: str = ""
+    obser1: str = ""  # Nombre Cliente (FACT) / Nombre Cliente o Razón Social (CCF)
+    obser2: str = ""  # (vacío en FACT) / Nombre Establecimiento (CCF)
     comentario: str = ""  # Dirección
-    cod_pag: str = ""  # Tipo Documento (FACT)
+    cod_pag: str = ""  # Tipo Documento (FACT o CCF)
     cod_rut: str = ""  # Número de DUI
+    cod_tpo: str = ""  # (vacío en FACT) / Número de Tarjeta IVA (CCF)
+    cod_zon: str = ""  # (vacío en FACT) / Email (CCF)
     celular: str = ""  # Número Celular del que escribe el cliente
     departamento: str = ""  # Departamento
     municipio: str = ""  # Municipio
-    reg_com: str = ""  # Código Actividad Económica (crédito fiscal)
+    por_com: str = ""  # (vacío en FACT) / Tipo contribuyente (CCF)
+    reg_com: str = ""  # (vacío en FACT) / Actividad Económica o Giro (CCF)
     status: int = 0
     ano_sis: int = 0
     mes_sis: int = 0
@@ -69,12 +72,12 @@ class PedidoEncabezado:
             "CODFAC": 1, "CODFAM": 3, "CODIDE": self.cod_ven,
             "CONLIN": self.departamento, "CODLUG": self.municipio,
             "CODMUN": 0, "CODPAG": self.cod_pag,
-            "CODRUT": self.cod_rut, "CODTPO": 0, "CODVEN": self.cod_ven,
-            "CODZON": 0, "DIAETG": self.dia_entg, "DIASIS": self.dia_sis,
+            "CODRUT": self.cod_rut, "CODTPO": self.cod_tpo, "CODVEN": self.cod_ven,
+            "CODZON": self.cod_zon, "DIAETG": self.dia_entg, "DIASIS": self.dia_sis,
             "FLGACT": 0, "FLGGPF": 5, "HORSIS": self.hor_sis,
             "MESETG": self.mes_entg, "MESSIS": self.mes_sis,
             "NOMUSR": self.celular, "NUMGPO": 0, "NUMPED": self.numtra,
-            "PORCOM": 0, "REGCOM": self.reg_com, "TASIVA": 0, "VALEXE": 0,
+            "PORCOM": self.por_com, "REGCOM": self.reg_com, "TASIVA": 0, "VALEXE": 0,
             "VALGRA": self.val_gra, "VALIVA": self.val_iva,
             "VALTOT": self.val_tot, "STATUS": 0, "FLGMOR": 0,
             "NUMDOC": str(self.numtra), "NUMDSP": f"WM{self.cod_ven}",

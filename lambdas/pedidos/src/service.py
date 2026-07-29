@@ -60,7 +60,10 @@ def crear_pedido(datos_enc: dict[str, Any], lineas: list[dict[str, Any]]) -> dic
         celular=str(datos_enc.get("celular", "")),
         departamento=str(datos_enc.get("departamento", "")),
         municipio=str(datos_enc.get("municipio", "")),
+        por_com=str(datos_enc.get("por_com", "")),
         reg_com=str(datos_enc.get("reg_com", "")),
+        cod_tpo=str(datos_enc.get("cod_tpo", "")),
+        cod_zon=str(datos_enc.get("cod_zon", "")),
     )
     enc.validar()
     enc.auto_llenar()
