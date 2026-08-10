@@ -25,9 +25,18 @@ class PedidoEncabezado:
     val_gra: Decimal = field(default_factory=lambda: Decimal("0"))
     val_iva: Decimal = field(default_factory=lambda: Decimal("0"))
     val_tot: Decimal = field(default_factory=lambda: Decimal("0"))
-    obser1: str = ""
-    obser2: str = ""
-    comentario: str = ""
+    obser1: str = ""  # Nombre Cliente (FACT) / Nombre Cliente o Razón Social (CCF)
+    obser2: str = ""  # (vacío en FACT) / Nombre Establecimiento (CCF)
+    comentario: str = ""  # Dirección
+    cod_pag: str = ""  # Tipo Documento (FACT o CCF)
+    cod_rut: str = ""  # Número de DUI
+    cod_tpo: str = ""  # (vacío en FACT) / Número de Tarjeta IVA (CCF)
+    cod_zon: str = ""  # (vacío en FACT) / Email (CCF)
+    celular: str = ""  # Número Celular del que escribe el cliente
+    departamento: str = ""  # Departamento
+    municipio: str = ""  # Municipio
+    por_com: str = ""  # (vacío en FACT) / Tipo contribuyente (CCF)
+    reg_com: str = ""  # (vacío en FACT) / Actividad Económica o Giro (CCF)
     status: int = 0
     ano_sis: int = 0
     mes_sis: int = 0
@@ -61,13 +70,14 @@ class PedidoEncabezado:
             "ANOENTG": self.ano_entg, "ANOSIS": self.ano_sis,
             "CANCOP": 0, "CODCTE": self.cod_cte, "CODDEP": 0,
             "CODFAC": 1, "CODFAM": 3, "CODIDE": self.cod_ven,
-            "CONLIN": 0, "CODLUG": 0, "CODMUN": 0, "CODPAG": 0,
-            "CODRUT": 0, "CODTPO": 0, "CODVEN": self.cod_ven,
-            "CODZON": 0, "DIAETG": self.dia_entg, "DIASIS": self.dia_sis,
+            "CONLIN": self.departamento, "CODLUG": self.municipio,
+            "CODMUN": 0, "CODPAG": self.cod_pag,
+            "CODRUT": self.cod_rut, "CODTPO": self.cod_tpo, "CODVEN": self.cod_ven,
+            "CODZON": self.cod_zon, "DIAETG": self.dia_entg, "DIASIS": self.dia_sis,
             "FLGACT": 0, "FLGGPF": 5, "HORSIS": self.hor_sis,
             "MESETG": self.mes_entg, "MESSIS": self.mes_sis,
-            "NOMUSR": self.cod_ven, "NUMGPO": 0, "NUMPED": self.numtra,
-            "PORCOM": 0, "REGCOM": 0, "TASIVA": 0, "VALEXE": 0,
+            "NOMUSR": self.celular, "NUMGPO": 0, "NUMPED": self.numtra,
+            "PORCOM": self.por_com, "REGCOM": self.reg_com, "TASIVA": 0, "VALEXE": 0,
             "VALGRA": self.val_gra, "VALIVA": self.val_iva,
             "VALTOT": self.val_tot, "STATUS": 0, "FLGMOR": 0,
             "NUMDOC": str(self.numtra), "NUMDSP": f"WM{self.cod_ven}",
@@ -83,7 +93,7 @@ class PedidoEncabezado:
             raise ValueError("numtra es requerido")
         if not self.cod_cte:
             raise ValueError("cod_cte es requerido")
-        if not self.cod_ven:
+        if not self.cod_ven and self.cod_cte != "99999999":
             raise ValueError("cod_ven es requerido")
 
 

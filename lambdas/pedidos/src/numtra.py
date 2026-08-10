@@ -14,7 +14,7 @@ from models import TABLE_PEDIDO_ENC
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "PAWS-"
+_PREFIX = "PIA-"
 _PAD_LENGTH = 10
 _EXTRACT_RE = re.compile(rf"^{re.escape(_PREFIX)}(\d+)$")
 
