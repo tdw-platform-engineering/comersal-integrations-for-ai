@@ -24,10 +24,10 @@ phases:
       - docker build -t $ECR_REPO_FACTURAS:$IMAGE_TAG -f lambdas/facturas/Dockerfile .
       - docker tag $ECR_REPO_FACTURAS:$IMAGE_TAG $ECR_REPO_FACTURAS:latest
 
-      # Catalogos Lambda
-      - echo "Building catalogos..."
-      - docker build -t $ECR_REPO_CATALOGOS:$IMAGE_TAG -f lambdas/catalogos/Dockerfile .
-      - docker tag $ECR_REPO_CATALOGOS:$IMAGE_TAG $ECR_REPO_CATALOGOS:latest
+      # Catalogos Lambda — disabled until Terraform infra is created (ECR repo, Lambda, IAM)
+      # - echo "Building catalogos..."
+      # - docker build -t $ECR_REPO_CATALOGOS:$IMAGE_TAG -f lambdas/catalogos/Dockerfile .
+      # - docker tag $ECR_REPO_CATALOGOS:$IMAGE_TAG $ECR_REPO_CATALOGOS:latest
 
   post_build:
     commands:
@@ -36,8 +36,8 @@ phases:
       - docker push $ECR_REPO_PEDIDOS:latest
       - docker push $ECR_REPO_FACTURAS:$IMAGE_TAG
       - docker push $ECR_REPO_FACTURAS:latest
-      - docker push $ECR_REPO_CATALOGOS:$IMAGE_TAG
-      - docker push $ECR_REPO_CATALOGOS:latest
+      # - docker push $ECR_REPO_CATALOGOS:$IMAGE_TAG
+      # - docker push $ECR_REPO_CATALOGOS:latest
 
       # Update Lambda function code
       - |
@@ -48,9 +48,9 @@ phases:
         aws lambda update-function-code \
           --function-name $FACTURAS_FUNCTION_NAME \
           --image-uri $ECR_REPO_FACTURAS:$IMAGE_TAG
-      - |
-        aws lambda update-function-code \
-          --function-name $CATALOGOS_FUNCTION_NAME \
-          --image-uri $ECR_REPO_CATALOGOS:$IMAGE_TAG
+      # - |
+      #   aws lambda update-function-code \
+      #     --function-name $CATALOGOS_FUNCTION_NAME \
+      #     --image-uri $ECR_REPO_CATALOGOS:$IMAGE_TAG
 
       - echo "Deploy complete"
