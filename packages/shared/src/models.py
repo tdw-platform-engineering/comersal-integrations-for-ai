@@ -93,7 +93,10 @@ class PedidoEncabezado:
             raise ValueError("numtra es requerido")
         if not self.cod_cte:
             raise ValueError("cod_cte es requerido")
-        if not self.cod_ven and self.cod_cte != "99999999":
+        if self.cod_cte == "99999999":
+            # Cliente nuevo: vendedor siempre es 501
+            self.cod_ven = "501"
+        elif not self.cod_ven:
             raise ValueError("cod_ven es requerido")
 
 
