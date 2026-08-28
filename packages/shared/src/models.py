@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
+# El Salvador timezone (UTC-6, sin horario de verano)
+TZ_EL_SALVADOR = timezone(timedelta(hours=-6))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -47,7 +50,7 @@ class PedidoEncabezado:
     dia_entg: int = 0
 
     def auto_llenar(self) -> None:
-        now = datetime.now()
+        now = datetime.now(TZ_EL_SALVADOR)
         if not self.ano_sis:
             self.ano_sis = now.year
         if not self.mes_sis:
