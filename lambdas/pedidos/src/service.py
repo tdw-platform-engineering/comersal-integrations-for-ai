@@ -15,7 +15,6 @@ from models import (
     TABLE_PEDIDO_ENC,
     TABLE_PEDIDO_DET,
     VIEW_CLIENTES,
-    VIEW_EXISTENCIA,
     VIEW_PRODUCTOS,
     PedidoDetalle,
     PedidoEncabezado,
@@ -147,18 +146,8 @@ def _validar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> Non
                     f"{linea}: factor empaque ({det.fac_emp}) no coincide con catálogo ({cat_fac})"
                 )
 
-            # Stock check
-            cursor.execute(
-                f"SELECT COALESCE(SUM(TotalUnidades), 0) AS disp FROM {VIEW_EXISTENCIA} WHERE CodPro = %s",
-                (det.cod_pro,),
-            )
-            stock_row = cursor.fetchone()
-            disponible = int(Decimal(str(stock_row["disp"]))) if stock_row else 0
-            pedido_unidades = det.ped_und + (det.ped_caj * max(det.fac_emp, 1))
-            if disponible <= 0:
-                errores.append(f"{linea}: sin existencia disponible")
-            elif pedido_unidades > disponible:
-                errores.append(f"{linea}: pedido ({pedido_unidades}) > existencia ({disponible})")
+            # Nota: la validación de stock se removió a propósito. Los productos
+            # entran al pedido sin importar existencia disponible.
 
             # Price positive
             if det.val_cto <= 0:
