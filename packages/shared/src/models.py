@@ -207,5 +207,4 @@ class FacturaAbierta:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 VIEW_PRODUCTOS = "dbo.[View_AC_Productos]"
-VIEW_EXISTENCIA = "dbo.[View_AC_Existencia]"
 VIEW_CLIENTES = "dbo.[View_AC_Clientes]"

@@ -1,6 +1,6 @@
 """Order creation service — validate + insert into NAV tables.
 
-Combines header construction, detail lines, validations (stock, prices,
+Combines header construction, detail lines, validations (prices,
 client existence), and the actual DB writes.
 """
 
