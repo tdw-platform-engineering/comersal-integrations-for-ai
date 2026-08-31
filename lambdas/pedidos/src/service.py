@@ -10,10 +10,9 @@ import logging
 from decimal import Decimal
 from typing import Any
 
+from config import NAV_PEDIDO_ENC_TABLE, NAV_PEDIDO_DET_TABLE
 from db import get_cursor
 from models import (
-    TABLE_PEDIDO_ENC,
-    TABLE_PEDIDO_DET,
     VIEW_CLIENTES,
     VIEW_PRODUCTOS,
     PedidoDetalle,
@@ -117,7 +116,7 @@ def _validar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> Non
                 errores.append(f"El cliente '{enc.cod_cte}' no existe en el sistema")
 
         # 2. Duplicate numtra
-        cursor.execute(f"SELECT TOP 1 NUMTRA FROM {TABLE_PEDIDO_ENC} WHERE NUMTRA = %s", (enc.numtra,))
+        cursor.execute(f"SELECT TOP 1 NUMTRA FROM {NAV_PEDIDO_ENC_TABLE} WHERE NUMTRA = %s", (enc.numtra,))
         if cursor.fetchone() is not None:
             errores.append(f"Ya existe un pedido con número '{enc.numtra}'")
 
@@ -174,7 +173,7 @@ def _insertar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> No
         cols = list(row.keys())
         placeholders = ", ".join(["%s"] * len(cols))
         cursor.execute(
-            f"INSERT INTO {TABLE_PEDIDO_ENC} ({', '.join(cols)}) VALUES ({placeholders})",
+            f"INSERT INTO {NAV_PEDIDO_ENC_TABLE} ({', '.join(cols)}) VALUES ({placeholders})",
             tuple(row.values()),
         )
 
@@ -184,7 +183,7 @@ def _insertar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> No
             cols = list(row.keys())
             placeholders = ", ".join(["%s"] * len(cols))
             cursor.execute(
-                f"INSERT INTO {TABLE_PEDIDO_DET} ({', '.join(cols)}) VALUES ({placeholders})",
+                f"INSERT INTO {NAV_PEDIDO_DET_TABLE} ({', '.join(cols)}) VALUES ({placeholders})",
                 tuple(row.values()),
             )
 

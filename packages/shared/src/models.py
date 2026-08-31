@@ -13,9 +13,12 @@ TZ_EL_SALVADOR = timezone(timedelta(hours=-6))
 # ═══════════════════════════════════════════════════════════════════════════════
 # PEDIDOS
 # ═══════════════════════════════════════════════════════════════════════════════
-
-TABLE_PEDIDO_ENC = "[PRUEBAS_NAV$T_PEDIDO_ENC$326a852b-0bdf-4d79-816d-c14d4187f50c]"
-TABLE_PEDIDO_DET = "[PRUEBAS_NAV$T_PEDIDO_DET$326a852b-0bdf-4d79-816d-c14d4187f50c]"
+#
+# NAV order-table names are NOT hardcoded here — they are company/environment
+# specific (COMERSAL production vs PRUEBAS_NAV test company, each with its own
+# extension GUID). The pedidos Lambda resolves them from env vars in
+# ``lambdas/pedidos/src/config.py`` (NAV_PEDIDO_ENC_TABLE / NAV_PEDIDO_DET_TABLE,
+# or NAV_COMPANY_PREFIX + NAV_EXTENSION_GUID). Import them from ``config`` there.
 
 
 @dataclass
