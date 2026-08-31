@@ -171,9 +171,10 @@ def _insertar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> No
         # Header
         row = enc.to_row()
         cols = list(row.keys())
+        col_sql = ", ".join(f"[{c}]" for c in cols)
         placeholders = ", ".join(["%s"] * len(cols))
         cursor.execute(
-            f"INSERT INTO {NAV_PEDIDO_ENC_TABLE} ({', '.join(cols)}) VALUES ({placeholders})",
+            f"INSERT INTO {NAV_PEDIDO_ENC_TABLE} ({col_sql}) VALUES ({placeholders})",
             tuple(row.values()),
         )
 
@@ -181,9 +182,10 @@ def _insertar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> No
         for det in detalles:
             row = det.to_row()
             cols = list(row.keys())
+            col_sql = ", ".join(f"[{c}]" for c in cols)
             placeholders = ", ".join(["%s"] * len(cols))
             cursor.execute(
-                f"INSERT INTO {NAV_PEDIDO_DET_TABLE} ({', '.join(cols)}) VALUES ({placeholders})",
+                f"INSERT INTO {NAV_PEDIDO_DET_TABLE} ({col_sql}) VALUES ({placeholders})",
                 tuple(row.values()),
             )
 
