@@ -9,13 +9,13 @@ from __future__ import annotations
 import logging
 import re
 
+from config import NAV_NUMTRA_PAD_LENGTH, NAV_NUMTRA_PREFIX, NAV_PEDIDO_ENC_TABLE
 from db import get_cursor
-from models import TABLE_PEDIDO_ENC
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = "PIA-"
-_PAD_LENGTH = 10
+_PREFIX = NAV_NUMTRA_PREFIX
+_PAD_LENGTH = NAV_NUMTRA_PAD_LENGTH
 _EXTRACT_RE = re.compile(rf"^{re.escape(_PREFIX)}(\d+)$")
 
 
@@ -30,7 +30,7 @@ def get_next_numtra() -> str:
     """
     query = f"""
         SELECT TOP 1 NUMTRA
-        FROM {TABLE_PEDIDO_ENC}
+        FROM {NAV_PEDIDO_ENC_TABLE}
         WHERE NUMTRA LIKE %s
         ORDER BY NUMTRA DESC
     """

@@ -88,21 +88,21 @@ def _error_response(errores: list[str], status: int = 400) -> dict[str, Any]:
 
 def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
     """Read an order back from the DB by numtra."""
+    from config import NAV_PEDIDO_ENC_TABLE, NAV_PEDIDO_DET_TABLE
     from db import get_cursor
-    from models import TABLE_PEDIDO_ENC, TABLE_PEDIDO_DET
 
     numtra = str(body.get("numtra", "")).strip()
     if not numtra:
         return _error_response(["numtra es requerido"])
 
     with get_cursor() as (cursor, _conn):
-        cursor.execute(f"SELECT * FROM {TABLE_PEDIDO_ENC} WHERE NUMTRA = %s", (numtra,))
+        cursor.execute(f"SELECT * FROM {NAV_PEDIDO_ENC_TABLE} WHERE NUMTRA = %s", (numtra,))
         enc = cursor.fetchone()
         if not enc:
             return _error_response([f"Pedido '{numtra}' no encontrado"])
 
         cursor.execute(
-            f"SELECT * FROM {TABLE_PEDIDO_DET} WHERE NUMTRA = %s ORDER BY CODLIN",
+            f"SELECT * FROM {NAV_PEDIDO_DET_TABLE} WHERE NUMTRA = %s ORDER BY CODLIN",
             (numtra,),
         )
         detalles = cursor.fetchall()
