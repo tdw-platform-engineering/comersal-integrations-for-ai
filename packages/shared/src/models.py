@@ -71,6 +71,14 @@ class PedidoEncabezado:
 
     def to_row(self) -> dict:
         self.auto_llenar()
+        now = datetime.now(TZ_EL_SALVADOR)
+        # NAV "Date/Time Moved Sales Order" are NOT-NULL with no default in the
+        # COMERSAL production company (the PRUEBAS_NAV test company tolerated the
+        # omission). Supply them in NAV's convention: date at midnight, and the
+        # time-of-day carried on NAV's 1754-01-01 base date. Naive datetimes
+        # (pymssql maps them to SQL Server ``datetime``).
+        date_moved = datetime(now.year, now.month, now.day)
+        time_moved = datetime(1754, 1, 1, now.hour, now.minute, now.second)
         return {
             "NUMTRA": self.numtra,
             "ANOENTG": self.ano_entg, "ANOSIS": self.ano_sis,
@@ -92,6 +100,8 @@ class PedidoEncabezado:
             "NCONSOLIDA": self.numtra, "STATUS2": "",
             "AUTUSR": "", "COMENTARIO": self.comentario,
             "FAUTORIZA": "", "STATENAV": 2,
+            "Date Moved Sales Order": date_moved,
+            "Time Moved Sales Order": time_moved,
         }
 
     def validar(self) -> None:
