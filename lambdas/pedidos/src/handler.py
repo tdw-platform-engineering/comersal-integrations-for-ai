@@ -35,6 +35,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if action == "obtener":
         return _obtener_pedido(body)
 
+    if action == "lista_precio":
+        return _lista_precio(body)
+
     # --- crear flow ---
     encabezado = body.get("encabezado", {})
     lineas = body.get("lineas", [])
@@ -84,6 +87,42 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
 def _error_response(errores: list[str], status: int = 400) -> dict[str, Any]:
     return {"ok": False, "errores": errores, "status": status}
+
+
+def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
+    """Return a client's price list (ListaPrecio) from NAV View_AC_Clientes.
+
+    Used by the Anima flush Lambda as a self-heal fallback when a registered
+    client's DynamoDB profile is missing `priceList`: flush fetches the real
+    list from NAV (source of truth), writes it back to the profile, and alarms.
+
+    Input:  {"action": "lista_precio", "cod_cte": "1044086"}
+    Output: {"ok": true, "cod_cte": "1044086", "lista_precio": "LP_AUTOMA"}
+            or {"ok": false, "errores": [...]}
+    """
+    from db import get_cursor
+    from models import VIEW_CLIENTES
+
+    cod_cte = str(body.get("cod_cte", "")).strip()
+    if not cod_cte:
+        return _error_response(["cod_cte es requerido"])
+
+    with get_cursor() as (cursor, _conn):
+        cursor.execute(
+            f"SELECT TOP 1 ListaPrecio FROM {VIEW_CLIENTES} WHERE CodCte = %s",
+            (cod_cte,),
+        )
+        row = cursor.fetchone()
+
+    if not row:
+        return _error_response([f"Cliente '{cod_cte}' no encontrado"])
+
+    # get_cursor(as_dict=True) → row is a dict keyed by column name.
+    lista = str((row.get("ListaPrecio") if isinstance(row, dict) else row[0]) or "").strip()
+    if not lista:
+        return _error_response([f"Cliente '{cod_cte}' no tiene ListaPrecio en NAV"])
+
+    return {"ok": True, "cod_cte": cod_cte, "lista_precio": lista}
 
 
 def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:

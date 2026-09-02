@@ -62,3 +62,60 @@ def test_success():
             )
             assert result["ok"] is True
             assert result["numtra"] == "PAWS-0000000042"
+
+
+def test_lista_precio_requires_cod_cte():
+    from src.handler import lambda_handler
+
+    result = lambda_handler({"action": "lista_precio"}, None)
+    assert result["ok"] is False
+    assert "cod_cte" in result["errores"][0]
+
+
+def test_lista_precio_success():
+    from src.handler import lambda_handler
+
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"ListaPrecio": "LP_AUTOMA"}
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=(cursor, MagicMock()))
+    cm.__exit__ = MagicMock(return_value=False)
+
+    with patch("db.get_cursor", return_value=cm):
+        result = lambda_handler({"action": "lista_precio", "cod_cte": "1044086"}, None)
+
+    assert result["ok"] is True
+    assert result["cod_cte"] == "1044086"
+    assert result["lista_precio"] == "LP_AUTOMA"
+
+
+def test_lista_precio_client_not_found():
+    from src.handler import lambda_handler
+
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=(cursor, MagicMock()))
+    cm.__exit__ = MagicMock(return_value=False)
+
+    with patch("db.get_cursor", return_value=cm):
+        result = lambda_handler({"action": "lista_precio", "cod_cte": "9999999"}, None)
+
+    assert result["ok"] is False
+    assert "no encontrado" in result["errores"][0]
+
+
+def test_lista_precio_empty_returns_error():
+    from src.handler import lambda_handler
+
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"ListaPrecio": ""}
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=(cursor, MagicMock()))
+    cm.__exit__ = MagicMock(return_value=False)
+
+    with patch("db.get_cursor", return_value=cm):
+        result = lambda_handler({"action": "lista_precio", "cod_cte": "1044086"}, None)
+
+    assert result["ok"] is False
+    assert "ListaPrecio" in result["errores"][0]
