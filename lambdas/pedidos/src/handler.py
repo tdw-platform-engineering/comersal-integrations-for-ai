@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from numtra import get_next_numtra
-from service import crear_pedido, ErrorValidacion
+from service import ErrorValidacion, crear_pedido
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -37,6 +37,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if action == "lista_precio":
         return _lista_precio(body)
+
+    if action == "diag_seq":
+        return _diag_seq()
 
     # --- crear flow ---
     encabezado = body.get("encabezado", {})
@@ -125,9 +128,71 @@ def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "cod_cte": cod_cte, "lista_precio": lista}
 
 
+def _diag_seq() -> dict[str, Any]:
+    """TEMPORARY read-only diagnostic — inspect the NUMTRA sequence object.
+
+    Confirms dbo.seq_pedido_glory exists as a SQL Server SEQUENCE, its current
+    value, increment and start — WITHOUT consuming it. Removed after Step-1
+    verification.
+    """
+    from config import NAV_NUMTRA_PAD_LENGTH, NAV_NUMTRA_PREFIX, NAV_NUMTRA_SEQUENCE
+    from db import get_cursor
+
+    # Split "schema.name" (default schema = dbo).
+    parts = NAV_NUMTRA_SEQUENCE.split(".")
+    seq_schema, seq_name = (parts[0], parts[1]) if len(parts) == 2 else ("dbo", parts[0])
+
+    with get_cursor() as (cursor, _conn):
+        cursor.execute(
+            """
+            SELECT SCHEMA_NAME(s.schema_id) AS seq_schema,
+                   s.name                    AS seq_name,
+                   CAST(s.current_value AS BIGINT) AS current_value,
+                   CAST(s.increment     AS BIGINT) AS increment,
+                   CAST(s.start_value   AS BIGINT) AS start_value,
+                   TYPE_NAME(s.system_type_id)     AS data_type,
+                   s.is_exhausted
+            FROM sys.sequences s
+            WHERE s.name = %s AND SCHEMA_NAME(s.schema_id) = %s
+            """,
+            (seq_name, seq_schema),
+        )
+        row = cursor.fetchone()
+
+    if not row:
+        return {
+            "ok": False,
+            "errores": [
+                f"No existe un SEQUENCE llamado {seq_schema}.{seq_name} en sys.sequences"
+            ],
+        }
+
+    def _i(v: Any) -> Any:
+        return int(v) if v is not None else None
+
+    current = _i(row.get("current_value"))
+    increment = _i(row.get("increment")) or 1
+    return {
+        "ok": True,
+        "sequence": f"{row.get('seq_schema')}.{row.get('seq_name')}",
+        "current_value": current,
+        "increment": increment,
+        "start_value": _i(row.get("start_value")),
+        "data_type": str(row.get("data_type", "")),
+        "is_exhausted": bool(row.get("is_exhausted")),
+        # What NEXT VALUE FOR would produce next (without actually consuming it).
+        "predicted_next": (current + increment) if current is not None else None,
+        "predicted_numtra": (
+            f"{NAV_NUMTRA_PREFIX}{(current + increment):0{NAV_NUMTRA_PAD_LENGTH}d}"
+            if current is not None
+            else None
+        ),
+    }
+
+
 def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
     """Read an order back from the DB by numtra."""
-    from config import NAV_PEDIDO_ENC_TABLE, NAV_PEDIDO_DET_TABLE
+    from config import NAV_PEDIDO_DET_TABLE, NAV_PEDIDO_ENC_TABLE
     from db import get_cursor
 
     numtra = str(body.get("numtra", "")).strip()
