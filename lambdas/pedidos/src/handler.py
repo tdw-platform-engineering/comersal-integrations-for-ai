@@ -207,6 +207,8 @@ def _diag_seq() -> dict[str, Any]:
                 # Broaden: match the exact name OR any name CONTAINING the key
                 # tokens (covers company-prefixed / GUID-suffixed NAV names like
                 # 'PRUEBAS_NAV$seq_pedido_glory$<guid>', different schema, etc.).
+                # Use CHARINDEX (not LIKE) to avoid '%' colliding with pymssql's
+                # parameter placeholders.
                 cursor.execute(
                     f"""
                     SELECT DB_NAME(DB_ID(%s)) AS db_name,
@@ -215,9 +217,9 @@ def _diag_seq() -> dict[str, Any]:
                            o.type AS obj_type
                     FROM [{safe_db}].sys.objects o
                     WHERE o.name = %s
-                       OR o.name LIKE '%%seq%%pedido%%'
-                       OR o.name LIKE '%%pedido%%glory%%'
-                       OR o.name LIKE '%%glory%%'
+                       OR CHARINDEX('pedido_glory', LOWER(o.name)) > 0
+                       OR CHARINDEX('seq_pedido', LOWER(o.name)) > 0
+                       OR CHARINDEX('glory', LOWER(o.name)) > 0
                     """,
                     (db, target_name),
                 )
