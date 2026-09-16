@@ -37,6 +37,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if action == "lista_precio":
         return _lista_precio(body)
 
+    if action == "check_perm":
+        return _check_perm(body)
+
     # --- crear flow ---
     encabezado = body.get("encabezado", {})
     lineas = body.get("lineas", [])
@@ -119,6 +122,42 @@ def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
         return _error_response([f"Cliente '{cod_cte}' no tiene ListaPrecio en NAV"])
 
     return {"ok": True, "cod_cte": cod_cte, "lista_precio": lista}
+
+
+def _check_perm(body: dict[str, Any]) -> dict[str, Any]:
+    """TEMPORARY read-only — check TDW's UPDATE perm on the sequence per DB.
+
+    NEXT VALUE FOR requires UPDATE on the SEQUENCE object. HAS_PERMS_BY_NAME
+    reports it WITHOUT consuming the sequence or creating anything. Optional
+    `db` targets a specific database (e.g. COMERSAL2016_MIG for prod) via USE.
+    Removed after verification.
+    """
+    from config import NAV_NUMTRA_SEQUENCE
+    from db import get_cursor
+
+    target_db = str(body.get("db", "")).strip()
+    with get_cursor() as (cursor, _conn):
+        if target_db:
+            safe_db = target_db.replace("]", "]]")
+            cursor.execute(f"USE [{safe_db}]")
+        cursor.execute(
+            """
+            SELECT DB_NAME() AS db, SUSER_SNAME() AS login_name,
+                   HAS_PERMS_BY_NAME(%s, 'OBJECT', 'UPDATE') AS can_update,
+                   OBJECT_ID(%s) AS oid
+            """,
+            (NAV_NUMTRA_SEQUENCE, NAV_NUMTRA_SEQUENCE),
+        )
+        row = cursor.fetchone() or {}
+    can_update = row.get("can_update")
+    return {
+        "ok": True,
+        "db": str(row.get("db", "")),
+        "login": str(row.get("login_name", "")),
+        "sequence": NAV_NUMTRA_SEQUENCE,
+        "object_resolves": row.get("oid") is not None,
+        "can_update_next_value_for": None if can_update is None else bool(can_update),
+    }
 
 
 def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
