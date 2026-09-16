@@ -157,6 +157,7 @@ def _diag_seq() -> dict[str, Any]:
     }
 
     matches: list[dict[str, Any]] = []
+    all_sequences: list[dict[str, Any]] = []
     databases: list[str] = []
     errors: list[str] = []
     identity: dict[str, Any] = {}
@@ -203,6 +204,9 @@ def _diag_seq() -> dict[str, Any]:
         for db in databases:
             safe_db = db.replace("]", "]]")  # bracket-escape only; name is from catalog
             try:
+                # Broaden: match the exact name OR any name CONTAINING the key
+                # tokens (covers company-prefixed / GUID-suffixed NAV names like
+                # 'PRUEBAS_NAV$seq_pedido_glory$<guid>', different schema, etc.).
                 cursor.execute(
                     f"""
                     SELECT DB_NAME(DB_ID(%s)) AS db_name,
@@ -211,6 +215,9 @@ def _diag_seq() -> dict[str, Any]:
                            o.type AS obj_type
                     FROM [{safe_db}].sys.objects o
                     WHERE o.name = %s
+                       OR o.name LIKE '%%seq%%pedido%%'
+                       OR o.name LIKE '%%pedido%%glory%%'
+                       OR o.name LIKE '%%glory%%'
                     """,
                     (db, target_name),
                 )
@@ -252,6 +259,33 @@ def _diag_seq() -> dict[str, Any]:
                             "is_exhausted": bool(sd.get("is_exhausted")),
                         }
                     matches.append(entry)
+
+                # Also list EVERY sequence in this DB (any name/schema) — so a
+                # sequence created under a different name is still surfaced.
+                cursor.execute(
+                    f"""
+                    SELECT SCHEMA_NAME(schema_id) AS seq_schema,
+                           name                    AS seq_name,
+                           CAST(current_value AS BIGINT) AS current_value,
+                           CAST(increment AS BIGINT)     AS increment
+                    FROM [{safe_db}].sys.sequences
+                    ORDER BY seq_schema, seq_name
+                    """
+                )
+                for s in cursor.fetchall() or []:
+                    all_sequences.append(
+                        {
+                            "database": db,
+                            "schema": str(s.get("seq_schema", "")),
+                            "name": str(s.get("seq_name", "")),
+                            "current_value": int(s["current_value"])
+                            if s.get("current_value") is not None
+                            else None,
+                            "increment": int(s["increment"])
+                            if s.get("increment") is not None
+                            else None,
+                        }
+                    )
             except Exception as e:  # noqa: BLE001 — record per-DB access errors
                 errors.append(f"{db}: {e}")
 
@@ -349,6 +383,8 @@ def _diag_seq() -> dict[str, Any]:
         "databases_scanned": databases,
         "matches": matches,
         "match_count": len(matches),
+        "all_sequences": all_sequences,
+        "all_sequences_count": len(all_sequences),
         "access_probe": access_probe,
         "enc_table": NAV_PEDIDO_ENC_TABLE,
         "enc_columns": enc_columns,
