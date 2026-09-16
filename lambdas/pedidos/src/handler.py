@@ -159,12 +159,34 @@ def _diag_seq() -> dict[str, Any]:
     matches: list[dict[str, Any]] = []
     databases: list[str] = []
     errors: list[str] = []
+    identity: dict[str, Any] = {}
+    access_probe: list[dict[str, Any]] = []
 
     with get_cursor() as (cursor, _conn):
         cursor.execute("SELECT DB_NAME() AS db, @@SERVERNAME AS server")
         ctx = cursor.fetchone() or {}
         current_db = str(ctx.get("db", ""))
         server_name = str(ctx.get("server", ""))
+
+        # Connection identity + server-level role membership. Answers "who am I
+        # and could a missing GRANT be hiding the object from me?".
+        cursor.execute(
+            """
+            SELECT SUSER_SNAME()                              AS login_name,
+                   USER_NAME()                                AS db_user,
+                   IS_SRVROLEMEMBER('sysadmin')               AS is_sysadmin,
+                   IS_MEMBER('db_owner')                      AS is_db_owner,
+                   IS_MEMBER('db_datareader')                 AS is_db_datareader
+            """
+        )
+        idrow = cursor.fetchone() or {}
+        identity = {
+            "login_name": str(idrow.get("login_name", "")),
+            "db_user": str(idrow.get("db_user", "")),
+            "is_sysadmin": bool(idrow.get("is_sysadmin")),
+            "is_db_owner": bool(idrow.get("is_db_owner")),
+            "is_db_datareader": bool(idrow.get("is_db_datareader")),
+        }
 
         # All online, readable databases on this server.
         cursor.execute(
@@ -233,14 +255,57 @@ def _diag_seq() -> dict[str, Any]:
             except Exception as e:  # noqa: BLE001 — record per-DB access errors
                 errors.append(f"{db}: {e}")
 
+        # Definitive existence-vs-permission probe per DB. describe_first_result_set
+        # PARSES + BINDS the statement (resolves the object + checks permissions)
+        # WITHOUT executing it — so it never consumes the sequence. On failure it
+        # returns error_number/error_message as columns:
+        #   - 208 "Invalid object name"      → the object truly does NOT exist.
+        #   - 229/300/others "permission ..." → object EXISTS but GRANT is missing.
+        # NULL error columns → the object exists and is usable by this login.
+        for db in databases:
+            safe_db = db.replace("]", "]]")
+            # dbo-qualified target; object name comes from config, not user input.
+            stmt = f"SELECT NEXT VALUE FOR dbo.{target_name}".replace("'", "''")
+            try:
+                cursor.execute(
+                    f"""
+                    USE [{safe_db}];
+                    SELECT error_number, error_message
+                    FROM sys.dm_exec_describe_first_result_set(N'{stmt}', NULL, 0)
+                    """
+                )
+                prow = cursor.fetchone() or {}
+                err_no = prow.get("error_number")
+                err_msg = prow.get("error_message")
+                if err_no is None:
+                    verdict = "usable"  # exists + this login can use it
+                elif int(err_no) == 208:
+                    verdict = "not_found"  # invalid object name → doesn't exist
+                else:
+                    verdict = "permission_or_other"  # exists but blocked / other
+                access_probe.append(
+                    {
+                        "database": db,
+                        "verdict": verdict,
+                        "error_number": int(err_no) if err_no is not None else None,
+                        "error_message": str(err_msg) if err_msg is not None else None,
+                    }
+                )
+            except Exception as e:  # noqa: BLE001
+                access_probe.append(
+                    {"database": db, "verdict": "probe_error", "error_message": str(e)}
+                )
+
     return {
         "ok": True,
         "server": server_name,
         "current_db": current_db,
         "target_name": target_name,
+        "identity": identity,
         "databases_scanned": databases,
         "matches": matches,
         "match_count": len(matches),
+        "access_probe": access_probe,
         "scan_errors": errors,
     }
 
