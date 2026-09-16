@@ -129,89 +129,119 @@ def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _diag_seq() -> dict[str, Any]:
-    """TEMPORARY read-only diagnostic — inspect the NUMTRA sequence object.
+    """TEMPORARY read-only diagnostic — exhaustively hunt for seq_pedido_glory.
 
-    Confirms dbo.seq_pedido_glory exists as a SQL Server SEQUENCE, its current
-    value, increment and start — WITHOUT consuming it. Removed after Step-1
-    verification.
+    Does NOT assume the object is a SQL Server SEQUENCE. Searches EVERY database
+    on the NAV server (sys.databases) for ANY object named 'seq_pedido_glory'
+    of ANY type (table/view/proc/function/sequence) via sys.objects, and if any
+    match is a SEQUENCE, reads its current_value/increment/start. Read-only.
+    Removed after Step-1 verification.
     """
-    from config import NAV_NUMTRA_PAD_LENGTH, NAV_NUMTRA_PREFIX, NAV_NUMTRA_SEQUENCE
+    from config import NAV_NUMTRA_SEQUENCE
     from db import get_cursor
 
-    # Split "schema.name" (default schema = dbo).
+    # Bare object name to hunt for (strip any schema qualifier).
     parts = NAV_NUMTRA_SEQUENCE.split(".")
-    seq_schema, seq_name = (parts[0], parts[1]) if len(parts) == 2 else ("dbo", parts[0])
+    target_name = parts[1] if len(parts) == 2 else parts[0]
+
+    # Map sys.objects.type to a human label.
+    type_labels = {
+        "U": "USER_TABLE",
+        "V": "VIEW",
+        "SO": "SEQUENCE",
+        "P": "SQL_STORED_PROCEDURE",
+        "FN": "SCALAR_FUNCTION",
+        "IF": "INLINE_TABLE_FUNCTION",
+        "TF": "TABLE_FUNCTION",
+        "SN": "SYNONYM",
+    }
+
+    matches: list[dict[str, Any]] = []
+    databases: list[str] = []
+    errors: list[str] = []
 
     with get_cursor() as (cursor, _conn):
+        cursor.execute("SELECT DB_NAME() AS db, @@SERVERNAME AS server")
+        ctx = cursor.fetchone() or {}
+        current_db = str(ctx.get("db", ""))
+        server_name = str(ctx.get("server", ""))
+
+        # All online, readable databases on this server.
         cursor.execute(
             """
-            SELECT SCHEMA_NAME(s.schema_id) AS seq_schema,
-                   s.name                    AS seq_name,
-                   CAST(s.current_value AS BIGINT) AS current_value,
-                   CAST(s.increment     AS BIGINT) AS increment,
-                   CAST(s.start_value   AS BIGINT) AS start_value,
-                   TYPE_NAME(s.system_type_id)     AS data_type,
-                   s.is_exhausted
-            FROM sys.sequences s
-            WHERE s.name = %s AND SCHEMA_NAME(s.schema_id) = %s
-            """,
-            (seq_name, seq_schema),
+            SELECT name FROM sys.databases
+            WHERE state = 0
+              AND HAS_DBACCESS(name) = 1
+            ORDER BY name
+            """
         )
-        row = cursor.fetchone()
+        databases = [str(r.get("name", "")) for r in (cursor.fetchall() or [])]
 
-        if not row:
-            # Not found by exact name — list every sequence in the current DB so
-            # we can tell "wrong schema/name" from "not created yet".
-            cursor.execute("SELECT DB_NAME() AS db")
-            dbrow = cursor.fetchone() or {}
-            cursor.execute(
-                """
-                SELECT SCHEMA_NAME(schema_id) AS seq_schema,
-                       name                    AS seq_name,
-                       CAST(current_value AS BIGINT) AS current_value
-                FROM sys.sequences
-                ORDER BY seq_schema, seq_name
-                """
-            )
-            all_seqs = cursor.fetchall() or []
-            return {
-                "ok": False,
-                "errores": [
-                    f"No existe un SEQUENCE llamado {seq_schema}.{seq_name} en sys.sequences"
-                ],
-                "current_db": str(dbrow.get("db", "")),
-                "sequences_found": [
-                    {
-                        "schema": str(s.get("seq_schema", "")),
-                        "name": str(s.get("seq_name", "")),
-                        "current_value": int(s["current_value"])
-                        if s.get("current_value") is not None
-                        else None,
+        # Hunt the object name in each database via a 3-part sys.objects query.
+        for db in databases:
+            safe_db = db.replace("]", "]]")  # bracket-escape only; name is from catalog
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT DB_NAME(DB_ID(%s)) AS db_name,
+                           SCHEMA_NAME(o.schema_id) AS obj_schema,
+                           o.name AS obj_name,
+                           o.type AS obj_type
+                    FROM [{safe_db}].sys.objects o
+                    WHERE o.name = %s
+                    """,
+                    (db, target_name),
+                )
+                for r in cursor.fetchall() or []:
+                    otype = str(r.get("obj_type", "")).strip()
+                    entry: dict[str, Any] = {
+                        "database": str(r.get("db_name", db)),
+                        "schema": str(r.get("obj_schema", "")),
+                        "name": str(r.get("obj_name", "")),
+                        "type": otype,
+                        "type_label": type_labels.get(otype, otype),
                     }
-                    for s in all_seqs
-                ],
-            }
+                    # If it's a SEQUENCE, pull its details from that DB.
+                    if otype == "SO":
+                        cursor.execute(
+                            f"""
+                            SELECT CAST(current_value AS BIGINT) AS current_value,
+                                   CAST(increment AS BIGINT)      AS increment,
+                                   CAST(start_value AS BIGINT)    AS start_value,
+                                   TYPE_NAME(system_type_id)      AS data_type,
+                                   is_exhausted
+                            FROM [{safe_db}].sys.sequences
+                            WHERE name = %s AND SCHEMA_NAME(schema_id) = %s
+                            """,
+                            (r.get("obj_name"), r.get("obj_schema")),
+                        )
+                        sd = cursor.fetchone() or {}
+                        entry["sequence_detail"] = {
+                            "current_value": int(sd["current_value"])
+                            if sd.get("current_value") is not None
+                            else None,
+                            "increment": int(sd["increment"])
+                            if sd.get("increment") is not None
+                            else None,
+                            "start_value": int(sd["start_value"])
+                            if sd.get("start_value") is not None
+                            else None,
+                            "data_type": str(sd.get("data_type", "")),
+                            "is_exhausted": bool(sd.get("is_exhausted")),
+                        }
+                    matches.append(entry)
+            except Exception as e:  # noqa: BLE001 — record per-DB access errors
+                errors.append(f"{db}: {e}")
 
-    def _i(v: Any) -> Any:
-        return int(v) if v is not None else None
-
-    current = _i(row.get("current_value"))
-    increment = _i(row.get("increment")) or 1
     return {
         "ok": True,
-        "sequence": f"{row.get('seq_schema')}.{row.get('seq_name')}",
-        "current_value": current,
-        "increment": increment,
-        "start_value": _i(row.get("start_value")),
-        "data_type": str(row.get("data_type", "")),
-        "is_exhausted": bool(row.get("is_exhausted")),
-        # What NEXT VALUE FOR would produce next (without actually consuming it).
-        "predicted_next": (current + increment) if current is not None else None,
-        "predicted_numtra": (
-            f"{NAV_NUMTRA_PREFIX}{(current + increment):0{NAV_NUMTRA_PAD_LENGTH}d}"
-            if current is not None
-            else None
-        ),
+        "server": server_name,
+        "current_db": current_db,
+        "target_name": target_name,
+        "databases_scanned": databases,
+        "matches": matches,
+        "match_count": len(matches),
+        "scan_errors": errors,
     }
 
 
