@@ -44,7 +44,8 @@ NAV_NUMTRA_PREFIX = os.environ.get("NAV_NUMTRA_PREFIX", "PIA-")
 NAV_NUMTRA_PAD_LENGTH = int(os.environ.get("NAV_NUMTRA_PAD_LENGTH", "10"))
 
 # NUMTRA sequence — a SQL Server SEQUENCE object that survives ENC/DET cleanups
-# and is the source of truth for the order correlativo. `NEXT VALUE FOR` on it
-# atomically yields the next integer (no MAX(NUMTRA) scan, no collisions under
-# concurrency). The schema-qualified name is configurable per environment.
-NAV_NUMTRA_SEQUENCE = os.environ.get("NAV_NUMTRA_SEQUENCE", "dbo.seq_pedido_glory")
+# (a TRUNCATE does not reset it, unlike an IDENTITY) and is the source of truth
+# for the order correlativo. The bot READS current_value + increment to build the
+# NUMTRA; NAV's order INSERT is what advances the sequence. Read-only from here.
+# The schema-qualified name is configurable per environment.
+NAV_NUMTRA_SEQUENCE = os.environ.get("NAV_NUMTRA_SEQUENCE", "dbo.seq_pedidos_glory")
