@@ -189,6 +189,37 @@ def _diag_seq() -> dict[str, Any]:
             "is_db_datareader": bool(idrow.get("is_db_datareader")),
         }
 
+        # Can this login run NEXT VALUE FOR the sequence? That requires the
+        # UPDATE permission on the SEQUENCE object. HAS_PERMS_BY_NAME checks it
+        # WITHOUT consuming the sequence (read-only) — returns 1/0, or NULL if the
+        # object can't be resolved. Checked against the fully-qualified name in
+        # the CURRENT db context.
+        seq_perm: dict[str, Any] = {}
+        try:
+            cursor.execute(
+                """
+                SELECT HAS_PERMS_BY_NAME(%s, 'OBJECT', 'UPDATE') AS can_update,
+                       HAS_PERMS_BY_NAME(%s, 'OBJECT', 'SELECT') AS can_select,
+                       HAS_PERMS_BY_NAME(%s, 'OBJECT', 'REFERENCES') AS can_reference
+                """,
+                (NAV_NUMTRA_SEQUENCE, NAV_NUMTRA_SEQUENCE, NAV_NUMTRA_SEQUENCE),
+            )
+            prow = cursor.fetchone() or {}
+            seq_perm = {
+                "object": NAV_NUMTRA_SEQUENCE,
+                "can_update_next_value_for": (
+                    None if prow.get("can_update") is None else bool(prow.get("can_update"))
+                ),
+                "can_select": (
+                    None if prow.get("can_select") is None else bool(prow.get("can_select"))
+                ),
+                "can_reference": (
+                    None if prow.get("can_reference") is None else bool(prow.get("can_reference"))
+                ),
+            }
+        except Exception as e:  # noqa: BLE001
+            seq_perm = {"object": NAV_NUMTRA_SEQUENCE, "error": str(e)}
+
         # All online, readable databases on this server.
         cursor.execute(
             """
@@ -340,7 +371,23 @@ def _diag_seq() -> dict[str, Any]:
 
         enc_columns: list[dict[str, Any]] = []
         enc_error = None
+        enc_context_db = None
+        enc_object_id = None
         try:
+            # Restore the DB context: the access_probe loop ran `USE [db]` and
+            # left the connection pointed at the LAST scanned DB (e.g. tempdb),
+            # where the ENC table does not exist. Point back at the original DB
+            # so OBJECT_ID resolves the ENC table correctly.
+            safe_current = current_db.replace("]", "]]")
+            if safe_current:
+                cursor.execute(f"USE [{safe_current}]")
+            # Confirm context + whether the ENC table resolves at all.
+            cursor.execute(
+                "SELECT DB_NAME() AS db, OBJECT_ID(%s) AS oid", (NAV_PEDIDO_ENC_TABLE,)
+            )
+            _ctx = cursor.fetchone() or {}
+            enc_context_db = str(_ctx.get("db", ""))
+            enc_object_id = _ctx.get("oid")
             cursor.execute(
                 """
                 SELECT c.name                          AS column_name,
@@ -375,6 +422,8 @@ def _diag_seq() -> dict[str, Any]:
                 )
         except Exception as e:  # noqa: BLE001
             enc_error = str(e)
+            enc_context_db = None
+            enc_object_id = None
 
     return {
         "ok": True,
@@ -382,6 +431,7 @@ def _diag_seq() -> dict[str, Any]:
         "current_db": current_db,
         "target_name": target_name,
         "identity": identity,
+        "sequence_permissions": seq_perm,
         "databases_scanned": databases,
         "matches": matches,
         "match_count": len(matches),
@@ -389,6 +439,8 @@ def _diag_seq() -> dict[str, Any]:
         "all_sequences_count": len(all_sequences),
         "access_probe": access_probe,
         "enc_table": NAV_PEDIDO_ENC_TABLE,
+        "enc_context_db": enc_context_db,
+        "enc_object_id": int(enc_object_id) if enc_object_id is not None else None,
         "enc_columns": enc_columns,
         "enc_columns_error": enc_error,
         "scan_errors": errors,
