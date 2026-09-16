@@ -1,4 +1,4 @@
-"""Unit tests for NUMTRA generation from the dbo.seq_pedidos_glory sequence."""
+"""Unit tests for NUMTRA generation via NEXT VALUE FOR dbo.seq_pedidos_glory."""
 
 from __future__ import annotations
 
@@ -16,77 +16,55 @@ def mock_env(monkeypatch):
     monkeypatch.delenv("NAV_NUMTRA_SEQUENCE", raising=False)
 
 
-def _cursor_returning(row):
+def _cursor(next_val):
+    """A fake pymssql cursor whose NEXT VALUE FOR query returns next_val."""
     cursor = MagicMock()
-    cursor.fetchone.return_value = row
-    cm = MagicMock()
-    cm.__enter__ = MagicMock(return_value=(cursor, MagicMock()))
-    cm.__exit__ = MagicMock(return_value=False)
-    return cm, cursor
+    cursor.fetchone.return_value = None if next_val is None else {"next_val": next_val}
+    return cursor
 
 
-def test_next_numtra_from_used_sequence():
-    """current_value is the last issued value → next = current + increment."""
-    from src.numtra import get_next_numtra
+def test_next_numtra_uses_sequence_value_directly():
+    """NEXT VALUE FOR returns the correlativo — used as-is, no +1."""
+    from src.numtra import next_numtra
 
-    cm, _ = _cursor_returning({"current_value": 11, "increment": 1})
-    with patch("src.numtra.get_cursor", return_value=cm):
-        assert get_next_numtra() == "PIA-0000000012"
-
-
-def test_next_numtra_freshly_created_sequence():
-    """A freshly created sequence reports current_value = start_value.
-
-    Real dev/prod case: CREATE SEQUENCE ... START WITH 100 → sys.sequences shows
-    current_value 100 before first use. Rule "read current + 1" → first NUMTRA is
-    101 (start + increment). NAV's INSERT then advances the sequence.
-    """
-    from src.numtra import get_next_numtra
-
-    cm, _ = _cursor_returning({"current_value": 100, "increment": 1})
-    with patch("src.numtra.get_cursor", return_value=cm):
-        assert get_next_numtra() == "PIA-0000000101"
+    cursor = _cursor(102)
+    assert next_numtra(cursor) == "PIA-0000000102"
+    # It must have consumed the sequence via NEXT VALUE FOR.
+    sql = cursor.execute.call_args[0][0]
+    assert "NEXT VALUE FOR" in sql
+    assert "dbo.seq_pedidos_glory" in sql
 
 
-def test_next_numtra_respects_increment():
-    """Increment other than 1 is honored (not a hardcoded +1)."""
-    from src.numtra import get_next_numtra
+def test_next_numtra_pads_to_ten_digits():
+    from src.numtra import next_numtra
 
-    cm, _ = _cursor_returning({"current_value": 100, "increment": 5})
-    with patch("src.numtra.get_cursor", return_value=cm):
-        assert get_next_numtra() == "PIA-0000000105"
+    assert next_numtra(_cursor(7)) == "PIA-0000000007"
 
 
-def test_next_numtra_missing_increment_defaults_to_1():
-    from src.numtra import get_next_numtra
+def test_next_numtra_tuple_cursor():
+    """Cursor returning a tuple (as_dict=False) is also supported."""
+    from src.numtra import next_numtra
 
-    cm, _ = _cursor_returning({"current_value": 41, "increment": None})
-    with patch("src.numtra.get_cursor", return_value=cm):
-        assert get_next_numtra() == "PIA-0000000042"
+    cursor = MagicMock()
+    cursor.fetchone.return_value = (250,)
+    assert next_numtra(cursor) == "PIA-0000000250"
 
 
-def test_next_numtra_raises_when_sequence_absent():
-    """No row (sequence not created / not readable) → RuntimeError, no silent number."""
-    from src.numtra import get_next_numtra
+def test_next_numtra_raises_when_no_value():
+    """No value back (sequence missing / no UPDATE perm) → RuntimeError."""
+    from src.numtra import next_numtra
 
-    cm, _ = _cursor_returning(None)
-    with patch("src.numtra.get_cursor", return_value=cm):
-        with pytest.raises(RuntimeError):
-            get_next_numtra()
+    with pytest.raises(RuntimeError):
+        next_numtra(_cursor(None))
 
 
 def test_next_numtra_custom_prefix_and_pad():
-    """A different company's series (e.g. APP + 6 digits) formats correctly.
-
-    numtra reads the prefix/pad as module-level names imported from config, so
-    patch those names directly (matches how the code resolves them at runtime).
-    """
+    """A different company's series (e.g. APP + 6 digits) formats correctly."""
     from src import numtra
 
-    cm, _ = _cursor_returning({"current_value": 7, "increment": 1})
+    cursor = _cursor(8)
     with (
-        patch("src.numtra.get_cursor", return_value=cm),
         patch("src.numtra.NAV_NUMTRA_PREFIX", "APP"),
         patch("src.numtra.NAV_NUMTRA_PAD_LENGTH", 6),
     ):
-        assert numtra.get_next_numtra() == "APP000008"
+        assert numtra.next_numtra(cursor) == "APP000008"

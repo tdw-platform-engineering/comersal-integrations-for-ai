@@ -1,20 +1,21 @@
-"""NUMTRA generation — read the dbo.seq_pedidos_glory SQL Server SEQUENCE.
+"""NUMTRA generation — consume the dbo.seq_pedidos_glory SQL Server SEQUENCE.
 
 Format: PIA-NNNNNNNNNN (prefix + zero-padded correlativo).
 
 Design (confirmed with NAV): the SEQUENCE is the source of truth for the order
 correlativo. Unlike an IDENTITY it survives ENC/DET table cleanups (a TRUNCATE
-does not reset it). **NAV's order INSERT is what ADVANCES the sequence**; the bot
-only READS `sys.sequences.current_value` and adds `increment` to build the NUMTRA
-to write into the order. The bot never consumes/modifies the sequence, so
-read-only (db_datareader) access is enough — no UPDATE grant needed.
+does not reset it). The bot ADVANCES the correlativo by consuming the sequence
+with ``NEXT VALUE FOR`` — which atomically returns the next value AND advances
+the sequence in one step, so concurrent orders can never get the same number.
 
-`current_value` reflects the highest value the sequence has reached. The bot's
-rule is "read the current correlativo and add 1" → `current_value + increment`.
-Note on first use: a freshly created sequence reports `current_value = start_value`
-(e.g. 100), so the first generated NUMTRA is start+increment (101). After NAV
-inserts a pedido and advances the sequence, `current_value` tracks the last value
-NAV consumed and the bot reads that + increment for the next order.
+``next_numtra(cursor)`` runs inside the caller's OPEN transaction (the same
+transaction that inserts the header + detail), so "advance the correlativo" and
+"insert the order" commit together — exactly one sequence value per persisted
+order. Consuming the sequence requires the UPDATE permission on the object
+(verified: the connection login has it).
+
+The returned integer IS the NUMTRA number (no +1) — ``NEXT VALUE FOR`` already
+advanced it.
 """
 
 from __future__ import annotations
@@ -26,46 +27,41 @@ from config import (
     NAV_NUMTRA_PREFIX,
     NAV_NUMTRA_SEQUENCE,
 )
-from db import get_cursor
 
 logger = logging.getLogger(__name__)
 
 
-def get_next_numtra() -> str:
-    """Build the next NUMTRA from the dbo.seq_pedidos_glory sequence.
+def next_numtra(cursor) -> str:  # noqa: ANN001 — pymssql cursor, kept transaction-local
+    """Consume the sequence within the caller's transaction and build the NUMTRA.
 
-    Reads the sequence's current_value + increment (read-only) and formats it as
-    ``{prefix}{next:0{pad}d}`` (e.g. "PIA-0000000101").
+    Args:
+        cursor: An OPEN pymssql cursor whose connection owns the insert
+            transaction. ``NEXT VALUE FOR`` runs on it so the sequence advance
+            and the order insert are one atomic unit.
+
+    Returns:
+        The formatted NUMTRA (e.g. "PIA-0000000102").
 
     Raises:
-        RuntimeError: If the sequence does not exist or cannot be read.
+        RuntimeError: If the sequence value cannot be obtained.
     """
-    # Split "schema.name" (default schema = dbo).
-    parts = NAV_NUMTRA_SEQUENCE.split(".")
-    seq_schema, seq_name = (parts[0], parts[1]) if len(parts) == 2 else ("dbo", parts[0])
+    cursor.execute(f"SELECT NEXT VALUE FOR {NAV_NUMTRA_SEQUENCE} AS next_val")
+    row = cursor.fetchone()
+    # pymssql returns a dict (as_dict=True) or a tuple depending on the cursor.
+    if isinstance(row, dict):
+        value = row.get("next_val")
+    elif row:
+        value = row[0]
+    else:
+        value = None
 
-    with get_cursor() as (cursor, _conn):
-        cursor.execute(
-            """
-            SELECT CAST(current_value AS BIGINT) AS current_value,
-                   CAST(increment     AS BIGINT) AS increment
-            FROM sys.sequences
-            WHERE name = %s AND SCHEMA_NAME(schema_id) = %s
-            """,
-            (seq_name, seq_schema),
-        )
-        row = cursor.fetchone()
-
-    if not row or row.get("current_value") is None:
+    if value is None:
         raise RuntimeError(
-            f"No se pudo leer la secuencia {seq_schema}.{seq_name} "
-            "(¿existe y el usuario tiene lectura?)"
+            f"NEXT VALUE FOR {NAV_NUMTRA_SEQUENCE} no devolvió valor "
+            "(¿existe la secuencia y el usuario tiene permiso UPDATE?)"
         )
 
-    current = int(row["current_value"])
-    increment = int(row.get("increment") or 1)
-    next_seq = current + increment
-
-    numtra = f"{NAV_NUMTRA_PREFIX}{next_seq:0{NAV_NUMTRA_PAD_LENGTH}d}"
-    logger.info("Generated NUMTRA from sequence: %s (seq current=%s)", numtra, current)
+    seq = int(value)
+    numtra = f"{NAV_NUMTRA_PREFIX}{seq:0{NAV_NUMTRA_PAD_LENGTH}d}"
+    logger.info("Generated NUMTRA from sequence: %s (seq value=%s)", numtra, seq)
     return numtra

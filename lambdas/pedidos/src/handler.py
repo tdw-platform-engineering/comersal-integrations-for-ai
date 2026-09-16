@@ -13,7 +13,6 @@ import json
 import logging
 from typing import Any
 
-from numtra import get_next_numtra
 from service import ErrorValidacion, crear_pedido
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if action == "diag_seq":
         return _diag_seq()
 
+    if action == "burn_seq":
+        return _burn_seq(int(body.get("count", 1)))
+
     # --- crear flow ---
     encabezado = body.get("encabezado", {})
     lineas = body.get("lineas", [])
@@ -58,14 +60,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     )
 
     try:
-        # Generate NUMTRA directly from SQL Server (no Athena)
-        numtra = get_next_numtra()
-
-        # Inject numtra into header
-        encabezado["numtra"] = numtra
-
-        # Validate and insert
+        # NUMTRA is generated from the dbo.seq_pedidos_glory SEQUENCE inside
+        # crear_pedido (NEXT VALUE FOR, in the same transaction as the insert),
+        # so it is returned in the result rather than computed here first.
         result = crear_pedido(encabezado, lineas)
+        numtra = result["numtra"]
 
         logger.info("Order created", extra={"numtra": numtra, "request_id": request_id})
 
@@ -126,6 +125,28 @@ def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
         return _error_response([f"Cliente '{cod_cte}' no tiene ListaPrecio en NAV"])
 
     return {"ok": True, "cod_cte": cod_cte, "lista_precio": lista}
+
+
+def _burn_seq(count: int) -> dict[str, Any]:
+    """TEMPORARY — consume the NUMTRA sequence `count` times to position it.
+
+    One-off to skip already-used values (100 unused + 101 already a test order)
+    so the first real order lands on 102. Each call to NEXT VALUE FOR advances
+    the sequence permanently. Removed after positioning. Bounded 1..10.
+    """
+    from config import NAV_NUMTRA_SEQUENCE
+    from db import get_cursor
+
+    count = max(1, min(count, 10))
+    consumed: list[int] = []
+    with get_cursor() as (cursor, conn):
+        for _ in range(count):
+            cursor.execute(f"SELECT NEXT VALUE FOR {NAV_NUMTRA_SEQUENCE} AS v")
+            row = cursor.fetchone() or {}
+            v = row.get("v") if isinstance(row, dict) else (row[0] if row else None)
+            consumed.append(int(v) if v is not None else None)
+        conn.commit()
+    return {"ok": True, "sequence": NAV_NUMTRA_SEQUENCE, "consumed": consumed}
 
 
 def _diag_seq() -> dict[str, Any]:
