@@ -13,8 +13,7 @@ import json
 import logging
 from typing import Any
 
-from numtra import get_next_numtra
-from service import crear_pedido, ErrorValidacion
+from service import ErrorValidacion, crear_pedido
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -55,14 +54,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     )
 
     try:
-        # Generate NUMTRA directly from SQL Server (no Athena)
-        numtra = get_next_numtra()
-
-        # Inject numtra into header
-        encabezado["numtra"] = numtra
-
-        # Validate and insert
+        # NUMTRA is generated from the dbo.seq_pedidos_glory SEQUENCE inside
+        # crear_pedido (NEXT VALUE FOR, in the same transaction as the insert),
+        # so it is returned in the result rather than computed here first.
         result = crear_pedido(encabezado, lineas)
+        numtra = result["numtra"]
 
         logger.info("Order created", extra={"numtra": numtra, "request_id": request_id})
 
@@ -127,7 +123,7 @@ def _lista_precio(body: dict[str, Any]) -> dict[str, Any]:
 
 def _obtener_pedido(body: dict[str, Any]) -> dict[str, Any]:
     """Read an order back from the DB by numtra."""
-    from config import NAV_PEDIDO_ENC_TABLE, NAV_PEDIDO_DET_TABLE
+    from config import NAV_PEDIDO_DET_TABLE, NAV_PEDIDO_ENC_TABLE
     from db import get_cursor
 
     numtra = str(body.get("numtra", "")).strip()

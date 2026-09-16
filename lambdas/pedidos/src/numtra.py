@@ -1,54 +1,67 @@
-"""NUMTRA generation — direct SQL Server query (no Athena).
+"""NUMTRA generation — consume the dbo.seq_pedidos_glory SQL Server SEQUENCE.
 
-Format: PAWS-NNNNNNNNNN (10-digit zero-padded sequential).
-Queries the pedidos ENC table directly for MAX(NUMTRA) matching prefix.
+Format: PIA-NNNNNNNNNN (prefix + zero-padded correlativo).
+
+Design (confirmed with NAV): the SEQUENCE is the source of truth for the order
+correlativo. Unlike an IDENTITY it survives ENC/DET table cleanups (a TRUNCATE
+does not reset it). The bot ADVANCES the correlativo by consuming the sequence
+with ``NEXT VALUE FOR`` — which atomically returns the next value AND advances
+the sequence in one step, so concurrent orders can never get the same number.
+
+``next_numtra(cursor)`` runs inside the caller's OPEN transaction (the same
+transaction that inserts the header + detail), so "advance the correlativo" and
+"insert the order" commit together — exactly one sequence value per persisted
+order. Consuming the sequence requires the UPDATE permission on the object
+(verified: the connection login has it).
+
+The returned integer IS the NUMTRA number (no +1) — ``NEXT VALUE FOR`` already
+advanced it.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 
-from config import NAV_NUMTRA_PAD_LENGTH, NAV_NUMTRA_PREFIX, NAV_PEDIDO_ENC_TABLE
-from db import get_cursor
+from config import (
+    NAV_NUMTRA_PAD_LENGTH,
+    NAV_NUMTRA_PREFIX,
+    NAV_NUMTRA_SEQUENCE,
+)
 
 logger = logging.getLogger(__name__)
 
-_PREFIX = NAV_NUMTRA_PREFIX
-_PAD_LENGTH = NAV_NUMTRA_PAD_LENGTH
-_EXTRACT_RE = re.compile(rf"^{re.escape(_PREFIX)}(\d+)$")
 
+def next_numtra(cursor) -> str:  # noqa: ANN001 — pymssql cursor, kept transaction-local
+    """Consume the sequence within the caller's transaction and build the NUMTRA.
 
-def get_next_numtra() -> str:
-    """Get next NUMTRA directly from SQL Server.
+    Args:
+        cursor: An OPEN pymssql cursor whose connection owns the insert
+            transaction. ``NEXT VALUE FOR`` runs on it so the sequence advance
+            and the order insert are one atomic unit.
 
     Returns:
-        Next NUMTRA string (e.g. "PAWS-0000000001").
+        The formatted NUMTRA (e.g. "PIA-0000000102").
 
     Raises:
-        RuntimeError: If the query fails.
+        RuntimeError: If the sequence value cannot be obtained.
     """
-    query = f"""
-        SELECT TOP 1 NUMTRA
-        FROM {NAV_PEDIDO_ENC_TABLE}
-        WHERE NUMTRA LIKE %s
-        ORDER BY NUMTRA DESC
-    """
-
-    with get_cursor() as (cursor, _conn):
-        cursor.execute(query, (f"{_PREFIX}%",))
-        row = cursor.fetchone()
-
-    if not row:
-        next_seq = 1
+    cursor.execute(f"SELECT NEXT VALUE FOR {NAV_NUMTRA_SEQUENCE} AS next_val")
+    row = cursor.fetchone()
+    # pymssql returns a dict (as_dict=True) or a tuple depending on the cursor.
+    if isinstance(row, dict):
+        value = row.get("next_val")
+    elif row:
+        value = row[0]
     else:
-        raw = str(row.get("NUMTRA", "") or "")
-        match = _EXTRACT_RE.match(raw)
-        if match:
-            next_seq = int(match.group(1)) + 1
-        else:
-            next_seq = 1
+        value = None
 
-    numtra = f"{_PREFIX}{next_seq:0{_PAD_LENGTH}d}"
-    logger.info("Generated NUMTRA: %s", numtra)
+    if value is None:
+        raise RuntimeError(
+            f"NEXT VALUE FOR {NAV_NUMTRA_SEQUENCE} no devolvió valor "
+            "(¿existe la secuencia y el usuario tiene permiso UPDATE?)"
+        )
+
+    seq = int(value)
+    numtra = f"{NAV_NUMTRA_PREFIX}{seq:0{NAV_NUMTRA_PAD_LENGTH}d}"
+    logger.info("Generated NUMTRA from sequence: %s (seq value=%s)", numtra, seq)
     return numtra
