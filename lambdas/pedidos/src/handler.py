@@ -296,6 +296,50 @@ def _diag_seq() -> dict[str, Any]:
                     {"database": db, "verdict": "probe_error", "error_message": str(e)}
                 )
 
+        # Inspect the ENC table columns — rule out a "sequence-like" column
+        # living INSIDE the header table (identity, or a column whose DEFAULT
+        # consumes NEXT VALUE FOR a sequence). Also surfaces the exact column
+        # structure so we can confirm where NUMTRA lives.
+        from config import NAV_PEDIDO_ENC_TABLE
+
+        enc_columns: list[dict[str, Any]] = []
+        enc_error = None
+        try:
+            cursor.execute(
+                """
+                SELECT c.name                          AS column_name,
+                       TYPE_NAME(c.user_type_id)        AS data_type,
+                       c.max_length                     AS max_length,
+                       c.is_identity                    AS is_identity,
+                       c.is_computed                    AS is_computed,
+                       dc.definition                    AS default_definition
+                FROM sys.columns c
+                LEFT JOIN sys.default_constraints dc
+                       ON dc.parent_object_id = c.object_id
+                      AND dc.parent_column_id = c.column_id
+                WHERE c.object_id = OBJECT_ID(%s)
+                ORDER BY c.column_id
+                """,
+                (NAV_PEDIDO_ENC_TABLE,),
+            )
+            for r in cursor.fetchall() or []:
+                default_def = r.get("default_definition")
+                enc_columns.append(
+                    {
+                        "column": str(r.get("column_name", "")),
+                        "type": str(r.get("data_type", "")),
+                        "is_identity": bool(r.get("is_identity")),
+                        "is_computed": bool(r.get("is_computed")),
+                        "default": str(default_def) if default_def is not None else None,
+                        # Flag columns whose DEFAULT consumes a sequence.
+                        "uses_next_value_for": bool(
+                            default_def and "NEXT VALUE FOR" in str(default_def).upper()
+                        ),
+                    }
+                )
+        except Exception as e:  # noqa: BLE001
+            enc_error = str(e)
+
     return {
         "ok": True,
         "server": server_name,
@@ -306,6 +350,9 @@ def _diag_seq() -> dict[str, Any]:
         "matches": matches,
         "match_count": len(matches),
         "access_probe": access_probe,
+        "enc_table": NAV_PEDIDO_ENC_TABLE,
+        "enc_columns": enc_columns,
+        "enc_columns_error": enc_error,
         "scan_errors": errors,
     }
 
