@@ -159,13 +159,38 @@ def _diag_seq() -> dict[str, Any]:
         )
         row = cursor.fetchone()
 
-    if not row:
-        return {
-            "ok": False,
-            "errores": [
-                f"No existe un SEQUENCE llamado {seq_schema}.{seq_name} en sys.sequences"
-            ],
-        }
+        if not row:
+            # Not found by exact name — list every sequence in the current DB so
+            # we can tell "wrong schema/name" from "not created yet".
+            cursor.execute("SELECT DB_NAME() AS db")
+            dbrow = cursor.fetchone() or {}
+            cursor.execute(
+                """
+                SELECT SCHEMA_NAME(schema_id) AS seq_schema,
+                       name                    AS seq_name,
+                       CAST(current_value AS BIGINT) AS current_value
+                FROM sys.sequences
+                ORDER BY seq_schema, seq_name
+                """
+            )
+            all_seqs = cursor.fetchall() or []
+            return {
+                "ok": False,
+                "errores": [
+                    f"No existe un SEQUENCE llamado {seq_schema}.{seq_name} en sys.sequences"
+                ],
+                "current_db": str(dbrow.get("db", "")),
+                "sequences_found": [
+                    {
+                        "schema": str(s.get("seq_schema", "")),
+                        "name": str(s.get("seq_name", "")),
+                        "current_value": int(s["current_value"])
+                        if s.get("current_value") is not None
+                        else None,
+                    }
+                    for s in all_seqs
+                ],
+            }
 
     def _i(v: Any) -> Any:
         return int(v) if v is not None else None
