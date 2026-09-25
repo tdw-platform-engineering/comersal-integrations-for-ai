@@ -235,6 +235,20 @@ def _insertar_pedido(enc: PedidoEncabezado, detalles: list[PedidoDetalle]) -> st
         logger.info("_insertar_pedido: connection acquired (%sms)", _ms(t_conn))
         step = "init"
         try:
+            # Server-side guards. The pymssql/FreeTDS client query timeout does
+            # NOT reliably interrupt a statement BLOCKED waiting on a lock (it
+            # only fires on network-read waits), which is why a blocked INSERT
+            # rode the full 30s Lambda wall. SET LOCK_TIMEOUT makes SQL SERVER
+            # itself abort the statement (error 1222) if it can't acquire a lock
+            # within the window, and XACT_ABORT ON guarantees the whole txn is
+            # rolled back on any error. LOCK_TIMEOUT is in milliseconds.
+            step = "set lock_timeout"
+            lock_timeout_ms = NAV_INSERT_TIMEOUT_SECONDS * 1000
+            cursor.execute(f"SET LOCK_TIMEOUT {lock_timeout_ms}; SET XACT_ABORT ON;")
+            logger.info(
+                "_insertar_pedido: LOCK_TIMEOUT=%dms + XACT_ABORT ON set", lock_timeout_ms
+            )
+
             # 1. Advance the correlativo (atomic) and assign it to header + lines.
             step = "next_numtra (sequence)"
             t_seq = time.monotonic()

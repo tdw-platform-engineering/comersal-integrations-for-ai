@@ -135,13 +135,15 @@ def test_insert_timeout_rolls_back_and_returns_504():
         {"next_val": 102},             # NEXT VALUE FOR (sequence)
     ]
 
-    # Sequence read + header INSERT succeed; the first detail-line INSERT hangs
-    # and pymssql interrupts it (OperationalError) — the 4th execute() call.
+    # In _insertar_pedido the statement order is: SET LOCK_TIMEOUT, NEXT VALUE
+    # FOR, header INSERT, then the detail-line INSERT. The line INSERT hangs and
+    # SQL Server / pymssql interrupts it (OperationalError).
     cursor.execute.side_effect = [
-        None,  # client-exists SELECT
-        None,  # product SELECT
-        None,  # NEXT VALUE FOR
-        None,  # header INSERT
+        None,  # _validar_pedido: client-exists SELECT
+        None,  # _validar_pedido: product SELECT
+        None,  # _insertar_pedido: SET LOCK_TIMEOUT + XACT_ABORT
+        None,  # _insertar_pedido: NEXT VALUE FOR
+        None,  # _insertar_pedido: header INSERT
         pymssql.OperationalError("DB-Lib error: timeout"),  # line INSERT → interrupted
     ]
 
