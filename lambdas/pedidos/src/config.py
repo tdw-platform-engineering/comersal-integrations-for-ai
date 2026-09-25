@@ -49,3 +49,11 @@ NAV_NUMTRA_PAD_LENGTH = int(os.environ.get("NAV_NUMTRA_PAD_LENGTH", "10"))
 # NUMTRA; NAV's order INSERT is what advances the sequence. Read-only from here.
 # The schema-qualified name is configurable per environment.
 NAV_NUMTRA_SEQUENCE = os.environ.get("NAV_NUMTRA_SEQUENCE", "dbo.seq_pedidos_glory")
+
+# ── Order-insert query timeout ───────────────────────────────────────────────
+# Per-query timeout (seconds) for the order-insert transaction (sequence +
+# header + detail INSERTs). If any single statement runs longer than this,
+# pymssql interrupts it and raises OperationalError, so a hung NAV write fails
+# fast (logged + returned as an error) instead of silently eating the full 30s
+# Lambda wall. Tunable per environment; keep well under the Lambda timeout.
+NAV_INSERT_TIMEOUT_SECONDS = int(os.environ.get("NAV_INSERT_TIMEOUT_SECONDS", "5"))
