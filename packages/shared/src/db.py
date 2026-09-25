@@ -18,11 +18,16 @@ logger = logging.getLogger(__name__)
 
 _conn_params: dict | None = None
 
-# Login/query timeouts (seconds). Kept below the Lambda's 30s wall so a network
-# or firewall problem surfaces as a raised OperationalError WITH a log line
-# instead of a silent 30s hang that dies with no error.
-_LOGIN_TIMEOUT = int(os.environ.get("SQLSERVER_LOGIN_TIMEOUT", "10"))
-_QUERY_TIMEOUT = int(os.environ.get("SQLSERVER_QUERY_TIMEOUT", "25"))
+# Login/query timeouts (seconds). Deliberately kept LOW so the worst-case sum
+# of every DB step in one order (validate connect + validate query + insert
+# connect + insert step) stays comfortably under the Lambda's 30s wall. That
+# guarantees our own except/finally cleanup (rollback + connection close) always
+# runs — if instead a step ran long enough to hit the 30s Lambda timeout, the
+# runtime is hard-killed and NO Python cleanup executes, leaving the rollback to
+# SQL Server's (delayed) orphaned-connection reaping. Keeping these tight avoids
+# that path entirely. Override per-env via the SQLSERVER_* env vars if needed.
+_LOGIN_TIMEOUT = int(os.environ.get("SQLSERVER_LOGIN_TIMEOUT", "5"))
+_QUERY_TIMEOUT = int(os.environ.get("SQLSERVER_QUERY_TIMEOUT", "8"))
 
 
 def _parse_connection_string() -> dict:
