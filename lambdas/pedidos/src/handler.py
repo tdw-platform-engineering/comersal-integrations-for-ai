@@ -11,13 +11,22 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any
 
 from service import ErrorInsercion, ErrorValidacion, crear_pedido
 
+# Configure the ROOT logger so INFO logs from ALL modules (service, db, numtra)
+# are emitted — not just this handler. In the AWS Lambda Python runtime the root
+# logger defaults to WARNING, so a per-module ``getLogger(__name__)`` without a
+# level (as in service.py/db.py) has its INFO records dropped. Setting the root
+# level (honoring LOG_LEVEL, default INFO) fixes that for every module.
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.getLogger().setLevel(_LOG_LEVEL)
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(_LOG_LEVEL)
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
