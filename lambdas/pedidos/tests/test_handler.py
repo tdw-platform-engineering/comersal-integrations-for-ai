@@ -118,3 +118,49 @@ def test_lista_precio_empty_returns_error():
 
     assert result["ok"] is False
     assert "ListaPrecio" in result["errores"][0]
+
+
+def test_insert_timeout_rolls_back_and_returns_504():
+    """A hung INSERT (interrupted by the query timeout) → rollback + 504 error."""
+    import pymssql
+    from src.handler import lambda_handler
+
+    cursor = MagicMock()
+    conn = MagicMock()
+
+    # Validation queries succeed: client exists + product exists.
+    cursor.fetchone.side_effect = [
+        {"CodCte": "100"},              # client-exists check
+        {"CodPro": "P1", "FacEmpaque": 12},  # product lookup
+        {"next_val": 102},             # NEXT VALUE FOR (sequence)
+    ]
+
+    # Sequence read + header INSERT succeed; the first detail-line INSERT hangs
+    # and pymssql interrupts it (OperationalError) — the 4th execute() call.
+    cursor.execute.side_effect = [
+        None,  # client-exists SELECT
+        None,  # product SELECT
+        None,  # NEXT VALUE FOR
+        None,  # header INSERT
+        pymssql.OperationalError("DB-Lib error: timeout"),  # line INSERT → interrupted
+    ]
+
+    cm = MagicMock()
+    cm.__enter__ = MagicMock(return_value=(cursor, conn))
+    cm.__exit__ = MagicMock(return_value=False)
+
+    with patch("service.get_cursor", return_value=cm):
+        result = lambda_handler(
+            {
+                "encabezado": {"cod_cte": "100", "cod_ven": "V01", "val_tot": 5.0},
+                "lineas": [
+                    {"cod_pro": "P1", "ped_caj": 1, "fac_emp": 12, "val_cto": 5.0, "val_vtc": 5.0}
+                ],
+            },
+            None,
+        )
+
+    assert result["ok"] is False
+    assert result["status"] == 504
+    conn.rollback.assert_called_once()
+    conn.commit.assert_not_called()

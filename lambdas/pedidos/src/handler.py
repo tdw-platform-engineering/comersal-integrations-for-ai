@@ -11,12 +11,22 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 from typing import Any
 
-from service import ErrorValidacion, crear_pedido
+from service import ErrorInsercion, ErrorValidacion, crear_pedido
+
+# Configure the ROOT logger so INFO logs from ALL modules (service, db, numtra)
+# are emitted — not just this handler. In the AWS Lambda Python runtime the root
+# logger defaults to WARNING, so a per-module ``getLogger(__name__)`` without a
+# level (as in service.py/db.py) has its INFO records dropped. Setting the root
+# level (honoring LOG_LEVEL, default INFO) fixes that for every module.
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.getLogger().setLevel(_LOG_LEVEL)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(_LOG_LEVEL)
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -49,10 +59,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         extra={
             "request_id": request_id,
             "cod_cte": encabezado.get("cod_cte"),
+            "cod_ven": encabezado.get("cod_ven"),
             "num_lineas": len(lineas),
+            "val_tot": encabezado.get("val_tot"),
+            "cod_pros": [ln.get("cod_pro") for ln in lineas][:50],
         },
     )
 
+    t_start = time.monotonic()
     try:
         # NUMTRA is generated from the dbo.seq_pedidos_glory SEQUENCE inside
         # crear_pedido (NEXT VALUE FOR, in the same transaction as the insert),
@@ -60,7 +74,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         result = crear_pedido(encabezado, lineas)
         numtra = result["numtra"]
 
-        logger.info("Order created", extra={"numtra": numtra, "request_id": request_id})
+        logger.info(
+            "Order created",
+            extra={
+                "numtra": numtra,
+                "request_id": request_id,
+                "elapsed_ms": round((time.monotonic() - t_start) * 1000, 1),
+            },
+        )
 
         return {
             "ok": True,
@@ -72,12 +93,37 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     except ErrorValidacion as e:
         logger.warning(
             "Validation failed",
-            extra={"errores": e.errores, "request_id": request_id},
+            extra={
+                "errores": e.errores,
+                "request_id": request_id,
+                "elapsed_ms": round((time.monotonic() - t_start) * 1000, 1),
+            },
         )
         return _error_response(e.errores)
 
+    except ErrorInsercion as e:
+        logger.error(
+            "Order insert failed/timed out",
+            extra={
+                "request_id": request_id,
+                "elapsed_ms": round((time.monotonic() - t_start) * 1000, 1),
+                "detalle": str(e),
+            },
+        )
+        return _error_response(
+            ["No se pudo registrar el pedido en el sistema (tiempo de espera agotado). "
+             "Intenta de nuevo en un momento."],
+            status=504,
+        )
+
     except Exception as e:
-        logger.exception("Unexpected error creating order", extra={"request_id": request_id})
+        logger.exception(
+            "Unexpected error creating order",
+            extra={
+                "request_id": request_id,
+                "elapsed_ms": round((time.monotonic() - t_start) * 1000, 1),
+            },
+        )
         return _error_response([f"Error interno: {str(e)}"], status=500)
 
 
