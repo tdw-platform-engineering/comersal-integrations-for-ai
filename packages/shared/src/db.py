@@ -29,79 +29,6 @@ _conn_params: dict | None = None
 _LOGIN_TIMEOUT = int(os.environ.get("SQLSERVER_LOGIN_TIMEOUT", "5"))
 _QUERY_TIMEOUT = int(os.environ.get("SQLSERVER_QUERY_TIMEOUT", "8"))
 
-# When enabled, EVERY SQL statement (with params + timing) is logged at INFO via
-# a transparent cursor proxy. Turned ON by default right now to prove out what
-# the pedidos Lambda actually sends to NAV (the client insists there is no lock
-# on the order table — this shows the exact statements + where they stall).
-# Flip SQLSERVER_ECHO=0 to silence once the investigation is done.
-_SQL_ECHO = os.environ.get("SQLSERVER_ECHO", "1") not in ("0", "false", "False", "")
-
-
-def _truncate(val: object, limit: int = 2000) -> str:
-    s = repr(val)
-    return s if len(s) <= limit else s[:limit] + f"...<+{len(s) - limit} chars>"
-
-
-class _LoggingCursor:
-    """Transparent proxy around a pymssql cursor that logs each SQL statement.
-
-    Logs the operation + params BEFORE running (so a statement that then hangs
-    is still visible) and the row/elapsed AFTER. Everything else (fetchone,
-    fetchall, iteration, attributes) is delegated to the real cursor unchanged.
-    """
-
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def execute(self, operation, params=None):
-        t0 = time.monotonic()
-        sql_flat = " ".join(str(operation).split())
-        logger.info("sql.execute >>> %s | params=%s", sql_flat, _truncate(params))
-        try:
-            if params is not None:
-                result = self._cursor.execute(operation, params)
-            else:
-                result = self._cursor.execute(operation)
-        except Exception:
-            logger.exception(
-                "sql.execute FAILED after %sms >>> %s",
-                round((time.monotonic() - t0) * 1000, 1),
-                sql_flat,
-            )
-            raise
-        logger.info(
-            "sql.execute <<< done rowcount=%s (%sms)",
-            getattr(self._cursor, "rowcount", "?"),
-            round((time.monotonic() - t0) * 1000, 1),
-        )
-        return result
-
-    def executemany(self, operation, seq_of_params):
-        t0 = time.monotonic()
-        logger.info(
-            "sql.executemany >>> %s | batches=%s",
-            " ".join(str(operation).split()),
-            len(seq_of_params) if hasattr(seq_of_params, "__len__") else "?",
-        )
-        try:
-            result = self._cursor.executemany(operation, seq_of_params)
-        except Exception:
-            logger.exception(
-                "sql.executemany FAILED after %sms >>> %s",
-                round((time.monotonic() - t0) * 1000, 1),
-                " ".join(str(operation).split()),
-            )
-            raise
-        logger.info("sql.executemany <<< done (%sms)", round((time.monotonic() - t0) * 1000, 1))
-        return result
-
-    def __getattr__(self, name):
-        # Delegate everything else (fetchone/fetchall/rowcount/close/...).
-        return getattr(self._cursor, name)
-
-    def __iter__(self):
-        return iter(self._cursor)
-
 
 def _parse_connection_string() -> dict:
     cs = os.environ.get("SQLSERVER_CONNECTION_STRING", "")
@@ -177,6 +104,4 @@ def get_cursor(as_dict: bool = True, query_timeout: int | None = None):
     """
     with get_connection(query_timeout=query_timeout) as conn:
         cursor = conn.cursor(as_dict=as_dict)
-        if _SQL_ECHO:
-            cursor = _LoggingCursor(cursor)
         yield cursor, conn
